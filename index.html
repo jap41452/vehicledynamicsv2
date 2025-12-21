@@ -373,24 +373,45 @@ function buildVehicle(isAutoUpdate = false) {
 
 
 if(!isAutoUpdate || simTime === 0) {
+    // Calculate equilibrium suspension compression
+    const k_sf = getVal('k_sf');
+    const k_sr = getVal('k_sr');
+    const g = getVal('veh_g');
+    
+    // Approximate weight distribution (60% front, 40% rear for this geometry)
+    const frontWeight = 0.6 * massProps.M * g;
+    const rearWeight = 0.4 * massProps.M * g;
+    
+    // Equilibrium compression per wheel
+    const frontComp = (frontWeight / 2) / k_sf;  // Two front wheels
+    const rearComp = (rearWeight / 2) / k_sr;    // Two rear wheels
+    
+    // Start at equilibrium with compressed suspension
     state.z = CG.z; 
-    state.phi = 0; state.theta = 0;
-    state.dz = 0; state.dphi = 0; state.dtheta = 0;
-    state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
+    state.phi = 0; 
+    state.theta = 0;
+    state.dz = 0; 
+    state.dphi = 0; 
+    state.dtheta = 0;
+    
+    // Set wheel positions to equilibrium (compressed)
+    const freeLen = 25;
+    state.zw.FL = CG.z - freeLen + frontComp;
+    state.zw.FR = CG.z - freeLen + frontComp;
+    state.zw.RL = CG.z - freeLen + rearComp;
+    state.zw.RR = CG.z - freeLen + rearComp;
     
     // Initialize Box 3 position - RELATIVE TO VEHICLE CG
     box3State.x = getVal('box3_X0');
     box3State.y = getVal('box3_Y0');
     box3State.z = (H1 + R - CG.z) + H3/2;
     
-    // NEW: Start with box moving WITH the vehicle (zero relative velocity)
-    // This means zero air drag at t=0
+    // Start with box moving WITH the vehicle (zero relative velocity)
     const v_vehicle = getVal('veh_v');
     box3State.dx = 0; 
-    box3State.dy = -v_vehicle; // Negative because we want zero absolute velocity
+    box3State.dy = -v_vehicle;
     box3State.dz = 0;
 }
-
 
 }
 
@@ -745,5 +766,6 @@ function animate() {
 </script>
 </body>
 </html>
+
 
 
