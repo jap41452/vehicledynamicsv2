@@ -385,11 +385,13 @@ if(!isAutoUpdate || simTime === 0) {
     box3State.y = getVal('box3_Y0');
     box3State.z = (H1 + R - CG.z) + H3/2;
     
-    // Start with ZERO velocity - let it settle first
+    // Box starts moving WITH vehicle at ground speed
+    const v_vehicle = getVal('veh_v');
     box3State.dx = 0; 
-    box3State.dy = 0; // Changed from -v_vehicle
+    box3State.dy = -v_vehicle; // Absolute velocity = v_vehicle + (-v_vehicle) = 0
     box3State.dz = 0;
 }
+
 
 }
 
@@ -558,29 +560,34 @@ function getBox3Acceleration() {
     }
   }
   
-  // Air drag - ONLY AFTER SETTLE TIME
+  // Air drag - Cd ramps from 0 to 1.2 over settle time
   const settleTime = getVal('settle_time');
-  if(simTime > settleTime) {
-    const v_vehicle = getVal('veh_v');
-    const rho = 0.0765 / 386.1;
-    const L3 = getVal('box3_L');
-    const W3 = getVal('box3_W');
-    const Cd = 1.2;
-    const A_front = W3 * H3;
-    const A_side = L3 * H3;
-    
-    const v_abs_y = v_vehicle + box3State.dy;
-    const v_abs_x = box3State.dx;
-    const v_abs_z = box3State.dz;
-    
-    const Fy_drag = -0.5 * Cd * rho * A_front * v_abs_y * Math.abs(v_abs_y);
-    const Fx_drag = -0.5 * Cd * rho * A_side * v_abs_x * Math.abs(v_abs_x);
-    const Fz_drag = -0.5 * Cd * rho * (W3 * L3) * v_abs_z * Math.abs(v_abs_z);
-    
-    Fx += Fx_drag;
-    Fy += Fy_drag;
-    Fz += Fz_drag;
+  const Cd_max = 1.2;
+  let Cd = Cd_max;
+  
+  if(simTime < settleTime) {
+    // Ramp Cd from 0 to Cd_max over settle period
+    Cd = Cd_max * (simTime / settleTime);
   }
+  
+  const v_vehicle = getVal('veh_v');
+  const rho = 0.0765 / 386.1;
+  const L3 = getVal('box3_L');
+  const W3 = getVal('box3_W');
+  const A_front = W3 * H3;
+  const A_side = L3 * H3;
+  
+  const v_abs_y = v_vehicle + box3State.dy;
+  const v_abs_x = box3State.dx;
+  const v_abs_z = box3State.dz;
+  
+  const Fy_drag = -0.5 * Cd * rho * A_front * v_abs_y * Math.abs(v_abs_y);
+  const Fx_drag = -0.5 * Cd * rho * A_side * v_abs_x * Math.abs(v_abs_x);
+  const Fz_drag = -0.5 * Cd * rho * (W3 * L3) * v_abs_z * Math.abs(v_abs_z);
+  
+  Fx += Fx_drag;
+  Fy += Fy_drag;
+  Fz += Fz_drag;
   
   return {
     x: Fx / m3,
@@ -588,7 +595,6 @@ function getBox3Acceleration() {
     z: Fz / m3
   };
 }
-
 
 function stepBox3(dt) {
   const acc = getBox3Acceleration();
@@ -754,6 +760,7 @@ function animate() {
 </script>
 </body>
 </html>
+
 
 
 
