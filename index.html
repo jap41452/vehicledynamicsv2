@@ -529,34 +529,46 @@ function getBox3Acceleration() {
     Fz += contactForce;
   }
   
-  // Friction forces (simple damping to prevent sliding)
+  // Friction forces (only when in contact with vehicle)
   const mu = 0.3;
-  const Fx = -mu * m3 * g * Math.sign(box3State.dx) * Math.min(1, Math.abs(box3State.dx) / 10);
-  const Fy = -mu * m3 * g * Math.sign(box3State.dy) * Math.min(1, Math.abs(box3State.dy) / 10);
+  let Fx = 0;
+  let Fy = 0;
   
-  // NEW: Add air drag (wind resistance)
-  const rho = 0.0765 / 386.1; // Air density in lb·s²/in⁴ (converted from lb/in³)
+  if(penetration > 0) {
+    // Only apply friction when in contact
+    Fx = -mu * m3 * g * Math.sign(box3State.dx) * Math.min(1, Math.abs(box3State.dx) / 10);
+    Fy = -mu * m3 * g * Math.sign(box3State.dy) * Math.min(1, Math.abs(box3State.dy) / 10);
+  }
+  
+  // NEW: Air drag based on ABSOLUTE velocity (box velocity + vehicle velocity)
+  const v_vehicle = getVal('veh_v'); // Vehicle forward speed
+  const rho = 0.0765 / 386.1; // Air density
   const L3 = getVal('box3_L');
   const W3 = getVal('box3_W');
-  const Cd = 1.2; // Drag coefficient for a box
-  const A_front = W3 * H3; // Frontal area (width × height)
+  const Cd = 1.2; // Drag coefficient
+  const A_front = W3 * H3; // Frontal area
+  const A_side = L3 * H3; // Side area
   
-  // Drag force in Y direction: F = 0.5 * Cd * rho * A * v²
-  const v_rel_y = box3State.dy; // Box velocity relative to vehicle (which is moving forward)
-  const Fy_drag = -0.5 * Cd * rho * A_front * v_rel_y * Math.abs(v_rel_y); // Opposes motion
+  // Box's absolute velocity through air = vehicle speed + relative velocity
+  const v_abs_y = v_vehicle + box3State.dy; // Absolute forward velocity
+  const v_abs_x = box3State.dx; // Absolute lateral velocity
+  const v_abs_z = box3State.dz; // Absolute vertical velocity
+  
+  // Drag forces (oppose absolute motion)
+  const Fy_drag = -0.5 * Cd * rho * A_front * v_abs_y * Math.abs(v_abs_y);
+  const Fx_drag = -0.5 * Cd * rho * A_side * v_abs_x * Math.abs(v_abs_x);
+  const Fz_drag = -0.5 * Cd * rho * (W3 * L3) * v_abs_z * Math.abs(v_abs_z);
   
   return {
-    x: Fx / m3,
-    y: (Fy + Fy_drag) / m3, // Add drag to Y force
-    z: Fz / m3
+    x: (Fx + Fx_drag) / m3,
+    y: (Fy + Fy_drag) / m3, // Drag in vehicle frame = -drag on absolute velocity
+    z: (Fz + Fz_drag) / m3
   };
 }
 
 function stepBox3(dt) {
-  // Update Box 3 dynamics relative to vehicle
   const acc = getBox3Acceleration();
   
-  // Simple Euler integration
   box3State.dx += acc.x * dt;
   box3State.dy += acc.y * dt;
   box3State.dz += acc.z * dt;
@@ -565,27 +577,35 @@ function stepBox3(dt) {
   box3State.y += box3State.dy * dt;
   box3State.z += box3State.dz * dt;
   
-  // Check collision with vehicle surface
   const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
   const H3 = getVal('box3_H');
   const minZ_vehicle = surfaceZ + H3/2;
   
   if(box3State.z < minZ_vehicle) {
     box3State.z = minZ_vehicle;
-    if(box3State.dz < 0) box3State.dz = -box3State.dz * getVal('box3_Rest');
+    if(box3State.dz < 0) {
+      box3State.dz = -box3State.dz * getVal('box3_Rest');
+      // NEW: Kill small bounces to prevent numerical instability
+      if(Math.abs(box3State.dz) < 1.0) {
+        box3State.dz = 0;
+      }
+    }
   }
   
-  // NEW: Check collision with ground plane (absolute Z = 0 in world frame)
-  // Box 3's absolute Z position in world is: state.z + box3State.z
   const R = getVal('wheel_D') / 2;
-  const groundZ = R; // Ground is at wheel radius height
+  const groundZ = R;
   const box3_absolute_z = state.z + box3State.z;
   const minZ_ground = groundZ + H3/2;
   
   if(box3_absolute_z < minZ_ground) {
-    // Box hit the ground - adjust relative position
     box3State.z = minZ_ground - state.z;
-    if(box3State.dz < 0) box3State.dz = -box3State.dz * getVal('box3_Rest');
+    if(box3State.dz < 0) {
+      box3State.dz = -box3State.dz * getVal('box3_Rest');
+      // NEW: Kill small bounces
+      if(Math.abs(box3State.dz) < 1.0) {
+        box3State.dz = 0;
+      }
+    }
   }
 }
 
