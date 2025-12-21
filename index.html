@@ -371,7 +371,7 @@ function buildVehicle(isAutoUpdate = false) {
     vehicleGroup.add(mesh);
   });
   if(!isAutoUpdate || simTime === 0) {
-    state.z = CG.z + 20; 
+    state.z = CG.z; 
     state.phi = 0; state.theta = 0;
     state.dz = 0; state.dphi = 0; state.dtheta = 0;
     state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
