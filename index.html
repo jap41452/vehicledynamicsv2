@@ -534,47 +534,56 @@ function getBox3Acceleration() {
   const k_contact = 5000;
   const c_contact = 100;
   
-  let Fz = -m3 * g;
-  
-  if(penetration > 0) {
-    const contactForce = k_contact * penetration + c_contact * (-box3State.dz);
-    Fz += contactForce;
-  }
-  
-  // Friction forces (only when in contact with vehicle)
-  const mu = 0.3;
+  let Fz = -m3 * g; // Gravity - ALWAYS applied
   let Fx = 0;
   let Fy = 0;
   
+  // Contact forces (only when touching vehicle)
   if(penetration > 0) {
-    // Only apply friction when in contact
-    Fx = -mu * m3 * g * Math.sign(box3State.dx) * Math.min(1, Math.abs(box3State.dx) / 10);
-    Fy = -mu * m3 * g * Math.sign(box3State.dy) * Math.min(1, Math.abs(box3State.dy) / 10);
+    const contactForce = k_contact * penetration + c_contact * (-box3State.dz);
+    Fz += contactForce;
+    
+    // NEW: Proper Coulomb friction (only when in contact)
+    const mu = 0.6; // Increased friction coefficient
+    const normalForce = contactForce; // Normal force from contact
+    const maxFriction = mu * normalForce;
+    
+    // Friction opposes relative motion
+    const v_rel = Math.sqrt(box3State.dx**2 + box3State.dy**2);
+    
+    if(v_rel > 0.1) {
+      // Kinetic friction
+      Fx = -maxFriction * (box3State.dx / v_rel);
+      Fy = -maxFriction * (box3State.dy / v_rel);
+    } else {
+      // Static friction - use damping for small velocities
+      Fx = -box3State.dx * 1000;
+      Fy = -box3State.dy * 1000;
+    }
   }
   
-  // NEW: Air drag based on ABSOLUTE velocity (box velocity + vehicle velocity)
-  const v_vehicle = getVal('veh_v'); // Vehicle forward speed
-  const rho = 0.0765 / 386.1; // Air density
+  // Air drag based on ABSOLUTE velocity
+  const v_vehicle = getVal('veh_v');
+  const rho = 0.0765 / 386.1;
   const L3 = getVal('box3_L');
   const W3 = getVal('box3_W');
-  const Cd = 1.2; // Drag coefficient
-  const A_front = W3 * H3; // Frontal area
-  const A_side = L3 * H3; // Side area
+  const Cd = 1.2;
+  const A_front = W3 * H3;
+  const A_side = L3 * H3;
   
-  // Box's absolute velocity through air = vehicle speed + relative velocity
-  const v_abs_y = v_vehicle + box3State.dy; // Absolute forward velocity
-  const v_abs_x = box3State.dx; // Absolute lateral velocity
-  const v_abs_z = box3State.dz; // Absolute vertical velocity
+  const v_abs_y = v_vehicle + box3State.dy;
+  const v_abs_x = box3State.dx;
+  const v_abs_z = box3State.dz;
   
-  // Drag forces (oppose absolute motion)
   const Fy_drag = -0.5 * Cd * rho * A_front * v_abs_y * Math.abs(v_abs_y);
   const Fx_drag = -0.5 * Cd * rho * A_side * v_abs_x * Math.abs(v_abs_x);
   const Fz_drag = -0.5 * Cd * rho * (W3 * L3) * v_abs_z * Math.abs(v_abs_z);
   
+  // Return total acceleration (forces + drag) / mass
   return {
     x: (Fx + Fx_drag) / m3,
-    y: (Fy + Fy_drag) / m3, // Drag in vehicle frame = -drag on absolute velocity
-    z: (Fz + Fz_drag) / m3
+    y: (Fy + Fy_drag) / m3,
+    z: (Fz + Fz_drag) / m3  // Gravity is included in Fz
   };
 }
 
