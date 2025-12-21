@@ -370,16 +370,28 @@ function buildVehicle(isAutoUpdate = false) {
     mesh.castShadow = true;
     vehicleGroup.add(mesh);
   });
-  if(!isAutoUpdate || simTime === 0) {
+
+
+if(!isAutoUpdate || simTime === 0) {
     state.z = CG.z; 
     state.phi = 0; state.theta = 0;
     state.dz = 0; state.dphi = 0; state.dtheta = 0;
     state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
+    
+    // Initialize Box 3 position - RELATIVE TO VEHICLE CG
     box3State.x = getVal('box3_X0');
     box3State.y = getVal('box3_Y0');
     box3State.z = (H1 + R - CG.z) + H3/2;
-    box3State.dx = 0; box3State.dy = 0; box3State.dz = 0;
-  }
+    
+    // NEW: Start with box moving WITH the vehicle (zero relative velocity)
+    // This means zero air drag at t=0
+    const v_vehicle = getVal('veh_v');
+    box3State.dx = 0; 
+    box3State.dy = -v_vehicle; // Negative because we want zero absolute velocity
+    box3State.dz = 0;
+}
+
+
 }
 
 function addFeatureMesh(geom, color, x, y) {
