@@ -373,7 +373,7 @@ function buildVehicle(isAutoUpdate = false) {
 
 
 if(!isAutoUpdate || simTime === 0) {
-    state.z = CG.z; 
+    state.z = CG.z+10; 
     state.phi = 0; state.theta = 0;
     state.dz = 0; state.dphi = 0; state.dtheta = 0;
     state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
