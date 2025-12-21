@@ -519,17 +519,37 @@ function getBox3Acceleration() {
   const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
   const boxBottom = box3State.z - H3/2;
   const penetration = surfaceZ - boxBottom;
-  const k_contact = 2000;
-  const c_contact = 200;
+  const k_contact = 5000;
+  const c_contact = 100;
+  
   let Fz = -m3 * g;
+  
   if(penetration > 0) {
     const contactForce = k_contact * penetration + c_contact * (-box3State.dz);
     Fz += contactForce;
   }
+  
+  // Friction forces (simple damping to prevent sliding)
   const mu = 0.3;
   const Fx = -mu * m3 * g * Math.sign(box3State.dx) * Math.min(1, Math.abs(box3State.dx) / 10);
   const Fy = -mu * m3 * g * Math.sign(box3State.dy) * Math.min(1, Math.abs(box3State.dy) / 10);
-  return { x: Fx / m3, y: Fy / m3, z: Fz / m3 };
+  
+  // NEW: Add air drag (wind resistance)
+  const rho = 0.0765 / 386.1; // Air density in lb·s²/in⁴ (converted from lb/in³)
+  const L3 = getVal('box3_L');
+  const W3 = getVal('box3_W');
+  const Cd = 1.2; // Drag coefficient for a box
+  const A_front = W3 * H3; // Frontal area (width × height)
+  
+  // Drag force in Y direction: F = 0.5 * Cd * rho * A * v²
+  const v_rel_y = box3State.dy; // Box velocity relative to vehicle (which is moving forward)
+  const Fy_drag = -0.5 * Cd * rho * A_front * v_rel_y * Math.abs(v_rel_y); // Opposes motion
+  
+  return {
+    x: Fx / m3,
+    y: (Fy + Fy_drag) / m3, // Add drag to Y force
+    z: Fz / m3
+  };
 }
 
 function stepBox3(dt) {
