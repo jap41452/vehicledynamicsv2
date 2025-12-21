@@ -533,20 +533,40 @@ function getBox3Acceleration() {
 }
 
 function stepBox3(dt) {
+  // Update Box 3 dynamics relative to vehicle
   const acc = getBox3Acceleration();
+  
+  // Simple Euler integration
   box3State.dx += acc.x * dt;
   box3State.dy += acc.y * dt;
   box3State.dz += acc.z * dt;
+  
   box3State.x += box3State.dx * dt;
   box3State.y += box3State.dy * dt;
   box3State.z += box3State.dz * dt;
+  
+  // Check collision with vehicle surface
   const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
   const H3 = getVal('box3_H');
-  const minZ = surfaceZ + H3/2;
-if(box3State.z < minZ) {
-    box3State.z = minZ;
-    if(box3State.dz < 0) box3State.dz = -box3State.dz * getVal('box3_Rest'); // NEW LINE
-}
+  const minZ_vehicle = surfaceZ + H3/2;
+  
+  if(box3State.z < minZ_vehicle) {
+    box3State.z = minZ_vehicle;
+    if(box3State.dz < 0) box3State.dz = -box3State.dz * getVal('box3_Rest');
+  }
+  
+  // NEW: Check collision with ground plane (absolute Z = 0 in world frame)
+  // Box 3's absolute Z position in world is: state.z + box3State.z
+  const R = getVal('wheel_D') / 2;
+  const groundZ = R; // Ground is at wheel radius height
+  const box3_absolute_z = state.z + box3State.z;
+  const minZ_ground = groundZ + H3/2;
+  
+  if(box3_absolute_z < minZ_ground) {
+    // Box hit the ground - adjust relative position
+    box3State.z = minZ_ground - state.z;
+    if(box3State.dz < 0) box3State.dz = -box3State.dz * getVal('box3_Rest');
+  }
 }
 
 function getDerivatives(t, s_arr) {
