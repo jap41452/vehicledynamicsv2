@@ -545,10 +545,23 @@ function getBox3Acceleration() {
   let Fz = -m3 * g;  // Gravity
   
   // Simple ground collision
-  const H3 = getVal('box3_H');
-  const groundZ = getVal('wheel_D') / 2;
-  const boxBottom = box3State.z - H3/2;
   
+
+// In stepBox3, right before the ground collision check:
+const H3 = getVal('box3_H');
+const R = getVal('wheel_D') / 2;
+const groundZ = R;
+const minZ_ground = groundZ + H3/2;
+
+console.log(`Ground check: z=${box3State.z.toFixed(2)}, minZ=${minZ_ground.toFixed(2)}, boxBottom=${(box3State.z - H3/2).toFixed(2)}, groundZ=${groundZ.toFixed(2)}`);
+
+
+
+
+
+
+
+
   if(boxBottom < groundZ) {
     const penetration = groundZ - boxBottom;
     Fz += 5000 * penetration - 300 * box3State.dz;
@@ -703,6 +716,7 @@ if(looseBox3Mesh) {
 </script>
 </body>
 </html>
+
 
 
 
