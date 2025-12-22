@@ -532,6 +532,7 @@ function getVehicleSurfaceZ(x_rel, y_rel) {
   return z_surface + chassisTop;
 }
 
+
 function getBox3Acceleration() {
   const g = getVal('veh_g');
   const m3 = getVal('box3_Wt') / g;
@@ -542,41 +543,42 @@ function getBox3Acceleration() {
   const k_contact = 2000;
   const c_contact = 200;
   
-  let Fz = -m3 * g; // Gravity - ALWAYS applied
+  let Fz = -m3 * g;
   let Fx = 0;
   let Fy = 0;
   
-  // Contact forces (only when touching vehicle)
+  const settleTime = getVal('settle_time');
+  
   if(penetration > 0) {
     const contactForce = k_contact * penetration + c_contact * (-box3State.dz);
     Fz += contactForce;
     
-    // Proper Coulomb friction (only when in contact)
-    const mu = 0.6;
-    const normalForce = contactForce;
-    const maxFriction = mu * normalForce;
+    // Only apply friction AFTER settling
+    if(simTime > settleTime) {
+      const mu = 0.6;
+      const normalForce = contactForce;
+      
+      if(normalForce > 0) {
+        const maxFriction = mu * normalForce;
+        const v_rel = Math.sqrt(box3State.dx**2 + box3State.dy**2);
+        
+        if(v_rel > 0.1) {
+          Fx = -box3State.dx * (maxFriction / v_rel);
+          Fy = -box3State.dy * (maxFriction / v_rel);
+        } else {
+          const staticDamping = 1000;
+          Fx = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dx * staticDamping));
+          Fy = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dy * staticDamping));
+        }
+      }
+    }
     
-    const v_rel = Math.sqrt(box3State.dx**2 + box3State.dy**2);
-    
-    
-
-if(v_rel > 0.1) {
-  Fx = -box3State.dx * (maxFriction / v_rel);
-  Fy = -box3State.dy * (maxFriction / v_rel);
-} else {
-  // Static friction - clamp to maxFriction
-  const staticDamping = 1000;
-  Fx = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dx * staticDamping));
-  Fy = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dy * staticDamping));
-}
-
-    // DEBUG OUTPUT
     if(simTime < 1.0) {
-      console.log(`t=${simTime.toFixed(3)}, dy=${box3State.dy.toFixed(1)}, Fy=${Fy.toFixed(1)}, normalF=${normalForce.toFixed(1)}, pen=${penetration.toFixed(3)}`);
+      console.log(`t=${simTime.toFixed(3)}, dy=${box3State.dy.toFixed(1)}, Fy=${Fy.toFixed(1)}, normalF=${contactForce.toFixed(1)}, pen=${penetration.toFixed(3)}`);
     }
   }
   
-  const Cd = 0.0;  // Disabled
+  const Cd = 0.0;
   
   return {
     x: Fx / m3,
@@ -584,6 +586,7 @@ if(v_rel > 0.1) {
     z: Fz / m3
   };
 }
+  
 
 function stepBox3(dt) {
   const acc = getBox3Acceleration();
@@ -756,6 +759,7 @@ function animate() {
 </script>
 </body>
 </html>
+
 
 
 
