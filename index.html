@@ -587,8 +587,6 @@ function getBox3Acceleration() {
   };
 }
   
-
-
 function stepBox3(dt) {
   const acc = getBox3Acceleration();
   
@@ -596,19 +594,27 @@ function stepBox3(dt) {
   box3State.dy += acc.y * dt;
   box3State.dz += acc.z * dt;
   
-  // NEW: During settling, keep box locked to vehicle reference frame
+  // NEW: During settling, keep box GLUED to vehicle surface
   const settleTime = getVal('settle_time');
   if(simTime < settleTime) {
-    // Force box to maintain initial relative velocity (no sliding during settling)
     const v_vehicle = getVal('veh_v');
     box3State.dx = 0;
-    box3State.dy = -v_vehicle;  // Locked to vehicle
-    box3State.dz = 0;
+    box3State.dy = -v_vehicle;
+    // Don't lock dz to 0 - let it follow vehicle motion
+    // Instead, force the box to sit ON the vehicle surface
+    const H3 = getVal('box3_H');
+    const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
+    box3State.z = surfaceZ + H3/2;  // Force box to sit on surface
+    box3State.dz = 0;  // No relative vertical motion
   }
   
   box3State.x += box3State.dx * dt;
   box3State.y += box3State.dy * dt;
   box3State.z += box3State.dz * dt;
+
+
+
+
   
   // ... rest of function
 
@@ -628,6 +634,8 @@ function stepBox3(dt) {
       }
     }
   }
+
+
 
 
   
@@ -770,6 +778,7 @@ function animate() {
 </script>
 </body>
 </html>
+
 
 
 
