@@ -536,104 +536,31 @@ function getVehicleSurfaceZ(x_rel, y_rel) {
 }
 
 function getBox3Acceleration() {
+
   const g = getVal('veh_g');
   const m3 = getVal('box3_Wt') / g;
+  
+  let Fx = 0;
+  let Fy = 0;
+  let Fz = -m3 * g;  // Gravity
+  
+  // Simple ground collision
   const H3 = getVal('box3_H');
+  const groundZ = getVal('wheel_D') / 2;
+  const boxBottom = box3State.z - H3/2;
   
-  // Forces in WORLD frame
-  let Fx_world = 0;
-  let Fy_world = 0;
-  let Fz_world = -m3 * g;  // Gravity (always down in world)
-  
-  // Get vehicle surface position in WORLD coordinates
-  // Vehicle CG is at (0, 0, state.z) in world
-  // Box is at (box3State.x, box3State.y, box3State.z) in world
-  
-  // Transform box position to vehicle frame to check contact
-  const cos_phi = Math.cos(state.phi);
-  const sin_phi = Math.sin(state.phi);
-  const cos_theta = Math.cos(state.theta);
-  const sin_theta = Math.sin(state.theta);
-  
-  // Box position relative to vehicle CG in world
-  const dx_world = box3State.x - 0;  // Vehicle is at x=0
-  const dy_world = box3State.y - 0;  // Vehicle is at y=0  
-  const dz_world = box3State.z - state.z;
-  
-  // Rotate to vehicle frame to find local position on vehicle
-  // Inverse rotation: rotate by -phi around Y, then -theta around X
-  const x_veh = dx_world * cos_phi + dz_world * sin_phi;
-  const z_temp = -dx_world * sin_phi + dz_world * cos_phi;
-  const y_veh = dy_world * cos_theta - z_temp * sin_theta;
-  const z_veh = dy_world * sin_theta + z_temp * cos_theta;
-  
-  // Check if box is over the vehicle surface
-  const H1 = getVal('box1_H');
-  const R = getVal('wheel_D') / 2;
-  const chassisTop_veh = H1 + R - massProps.CG.z;
-  const surfaceZ_veh = chassisTop_veh - state.phi * x_veh + state.theta * y_veh;
-  
-  const boxBottom_veh = z_veh - H3/2;
-  const penetration = surfaceZ_veh - boxBottom_veh;
-  
-  // Contact forces
-  if(penetration > 0) {
-    const k_contact = 2000;
-    const c_contact = 200;
-    
-    // Relative velocity in vehicle frame (for damping)
-    const vx_veh = box3State.dx * cos_phi + box3State.dz * sin_phi;
-    const vz_temp = -box3State.dx * sin_phi + box3State.dz * cos_phi;
-    const vy_veh = box3State.dy * cos_theta - vz_temp * sin_theta;
-    const vz_veh = box3State.dy * sin_theta + vz_temp * cos_theta;
-    
-    const contactForce = k_contact * penetration + c_contact * (-vz_veh);
-    
-    // Normal force points up in vehicle frame, transform to world
-    const Fz_contact_veh = contactForce;
-    
-    // Transform normal force back to world frame
-    // Normal is in +Z direction in vehicle frame
-    Fx_world += Fz_contact_veh * sin_phi;
-    Fy_world += Fz_contact_veh * sin_theta;
-    Fz_world += Fz_contact_veh * cos_phi * cos_theta;
-    
-    // Friction (opposes velocity in contact plane)
-    if(contactForce > 0) {
-      const mu = 0.6;
-      const maxFriction = mu * contactForce;
-      
-      // Velocity magnitude in XY plane (world frame)
-      const v_horiz = Math.sqrt(box3State.dx**2 + box3State.dy**2);
-      
-      if(v_horiz > 0.1) {
-        const Fx_friction = -maxFriction * (box3State.dx / v_horiz);
-        const Fy_friction = -maxFriction * (box3State.dy / v_horiz);
-        Fx_world += Fx_friction;
-        Fy_world += Fy_friction;
-      }
-    }
-  }
-  
-  // Ground collision (simple - box bottom vs ground)
-//  const R = getVal('wheel_D') / 2;
-  const groundZ = R;
-  const boxBottom_world = box3State.z - H3/2;
-  
-  if(boxBottom_world < groundZ) {
-    const ground_penetration = groundZ - boxBottom_world;
-    const k_ground = 5000;
-    const c_ground = 300;
-    const groundForce = k_ground * ground_penetration + c_ground * (-box3State.dz);
-    Fz_world += groundForce;
+  if(boxBottom < groundZ) {
+    const penetration = groundZ - boxBottom;
+    Fz += 5000 * penetration - 300 * box3State.dz;
   }
   
   return {
-    x: Fx_world / m3,
-    y: Fy_world / m3,
-    z: Fz_world / m3
+    x: Fx / m3,
+    y: Fy / m3,
+    z: Fz / m3
   };
 }
+
   
 function stepBox3(dt) {
   const acc = getBox3Acceleration();
@@ -764,6 +691,7 @@ if(looseBox3Mesh) {
 </script>
 </body>
 </html>
+
 
 
 
