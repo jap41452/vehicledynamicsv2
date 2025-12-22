@@ -536,32 +536,19 @@ function getVehicleSurfaceZ(x_rel, y_rel) {
 }
 
 function getBox3Acceleration() {
-
   const g = getVal('veh_g');
   const m3 = getVal('box3_Wt') / g;
+  const H3 = getVal('box3_H');
+  const R = getVal('wheel_D') / 2;
   
   let Fx = 0;
   let Fy = 0;
   let Fz = -m3 * g;  // Gravity
   
   // Simple ground collision
+  const groundZ = R;
+  const boxBottom = box3State.z - H3/2;  // DEFINE IT HERE!
   
-
-// In stepBox3, right before the ground collision check:
-const H3 = getVal('box3_H');
-const R = getVal('wheel_D') / 2;
-const groundZ = R;
-const minZ_ground = groundZ + H3/2;
-
-console.log(`Ground check: z=${box3State.z.toFixed(2)}, minZ=${minZ_ground.toFixed(2)}, boxBottom=${(box3State.z - H3/2).toFixed(2)}, groundZ=${groundZ.toFixed(2)}`);
-
-
-
-
-
-
-
-
   if(boxBottom < groundZ) {
     const penetration = groundZ - boxBottom;
     Fz += 5000 * penetration - 300 * box3State.dz;
@@ -574,6 +561,9 @@ console.log(`Ground check: z=${box3State.z.toFixed(2)}, minZ=${minZ_ground.toFix
   };
 }
 
+
+
+
   function stepBox3(dt) {
   const acc = getBox3Acceleration();
   
@@ -585,15 +575,7 @@ console.log(`Ground check: z=${box3State.z.toFixed(2)}, minZ=${minZ_ground.toFix
   box3State.y += box3State.dy * dt;
   box3State.z += box3State.dz * dt;
   
-  // DEBUG
-  if(simTime < 2.0 && Math.floor(simTime * 10) % 5 === 0) {
-    console.log(`t=${simTime.toFixed(2)}: z=${box3State.z.toFixed(1)}, dz=${box3State.dz.toFixed(1)}, acc.z=${acc.z.toFixed(1)}`);
-  }
-  
-  // ... rest of function
-
-
-// Ground collision - check box BOTTOM
+  // Ground collision - check box BOTTOM
   const H3 = getVal('box3_H');
   const R = getVal('wheel_D') / 2;
   const groundZ = R;
@@ -609,7 +591,6 @@ console.log(`Ground check: z=${box3State.z.toFixed(2)}, minZ=${minZ_ground.toFix
     }
   }
 }
-
 
   
 
@@ -719,6 +700,7 @@ if(looseBox3Mesh) {
 </script>
 </body>
 </html>
+
 
 
 
