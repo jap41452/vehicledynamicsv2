@@ -561,8 +561,7 @@ function getBox3Acceleration() {
   };
 }
 
-  
-function stepBox3(dt) {
+  function stepBox3(dt) {
   const acc = getBox3Acceleration();
   
   box3State.dx += acc.x * dt;
@@ -572,6 +571,15 @@ function stepBox3(dt) {
   box3State.x += box3State.dx * dt;
   box3State.y += box3State.dy * dt;
   box3State.z += box3State.dz * dt;
+  
+  // DEBUG
+  if(simTime < 2.0 && Math.floor(simTime * 10) % 5 === 0) {
+    console.log(`t=${simTime.toFixed(2)}: z=${box3State.z.toFixed(1)}, dz=${box3State.dz.toFixed(1)}, acc.z=${acc.z.toFixed(1)}`);
+  }
+  
+  // ... rest of function
+
+
   
   const H3 = getVal('box3_H');
   const R = getVal('wheel_D') / 2;
@@ -691,6 +699,7 @@ if(looseBox3Mesh) {
 </script>
 </body>
 </html>
+
 
 
 
