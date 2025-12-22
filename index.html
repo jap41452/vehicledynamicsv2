@@ -589,6 +589,11 @@ if(v_rel > 0.1) {
 function stepBox3(dt) {
   const acc = getBox3Acceleration();
   
+  // DEBUG
+  if(simTime < 0.2) {
+    console.log(`stepBox3: t=${simTime.toFixed(3)}, dy=${box3State.dy.toFixed(1)}, acc.y=${acc.y.toFixed(1)}`);
+  }
+  
   box3State.dx += acc.x * dt;
   box3State.dy += acc.y * dt;
   box3State.dz += acc.z * dt;
@@ -610,6 +615,8 @@ function stepBox3(dt) {
       }
     }
   }
+
+
   
   // NEW: Proper ground collision check
   // Convert box position from vehicle frame to world frame
