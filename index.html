@@ -30,9 +30,9 @@
 </style>
 <script type="importmap">
 {
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+ "imports": {
+   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }
 }
 </script>
@@ -65,7 +65,7 @@
           <label>Weight     <span class="units">lb</span><input id="box3_Wt" type="number" value="100"></label>
           <label>Initial X <span class="units">in</span><input id="box3_X0" type="number" value="0"></label>
           <label>Initial Y <span class="units">in</span><input id="box3_Y0" type="number" value="-50"></label>
-        <label>Restitution <span class="units">0-1</span><input id="box3_Rest" type="number" value="0.3" step="0.1" min="0" max="1"></label>
+          <label>Friction Coeff<span class="units">µ</span><input id="box3_Fric" type="number" value="0.3" step="0.1"></label>
         </div>
         <h3>Wheels</h3>
         <div class="grid2">
@@ -88,24 +88,19 @@
         <label>Rear K <span class="units">lb/in</span><input id="k_tr" type="number" value="1400"></label>
       </div>
 
-<h3>Simulation</h3>
-<div class="grid2">
-  <label>Speed <span class="units">in/s</span><input id="veh_v" type="number" value="300"></label>
-  <label>Gravity <span class="units">in/s²</span><input id="veh_g" type="number" value="386.1"></label>
-  <label>Time Scale <span class="units">x</span><input id="time_scale" type="number" value="1.0" step="0.1" min="0.1" max="10"></label>
-  <label>Settle Time <span class="units">s</span><input id="settle_time" type="number" value="2.0" step="0.5" min="0" max="10"></label>
-</div>
+      <h3>Simulation</h3>
+      <div class="grid2">
+        <label>Speed <span class="units">in/s</span><input id="veh_v" type="number" value="300"></label>
+        <label>Gravity <span class="units">in/s²</span><input id="veh_g" type="number" value="386.1"></label>
+        <label>Time Scale <span class="units">x</span><input id="time_scale" type="number" value="1.0" step="0.1" min="0.1" max="10"></label>
+      </div>
 
       <div class="grid2" style="margin-top:10px;">
         <button id="solveBtn">► Solve</button>
         <button id="stopBtn">■ Stop</button>
       </div>
       <button id="updateBtn">Reset / Center Vehicle</button>
-      <h3>Analysis Point</h3>
-      <div class="grid2">
-        <label>User X <span class="units">in</span><input id="user_X" type="number" value="0"></label>
-        <label>User Y <span class="units">in</span><input id="user_Y" type="number" value="60"></label>
-      </div>
+      
       <h3>Road Feature Settings</h3>
       <div class="grid2">
         <label style="grid-column: 1 / span 2;">Type
@@ -129,6 +124,7 @@
     <canvas id="accelChart"></canvas>
   </div>
 </div>
+
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -150,12 +146,16 @@ const state = {
   z: 40, phi: 0, theta: 0,
   dz: 0, dphi: 0, dtheta: 0,
   zw: { FL:30, FR:30, RL:30, RR:30 },
-  dzw: { FL:0, FR:0, RL:0, RR:0 }
+  dzw: { FL:0, FR:0, RL:0, RR:0 },
+  // Last frame accel storage for box physics
+  ddz: 0, ddphi: 0, ddtheta: 0 
 };
 
+// Box state is purely relative to vehicle center
 const box3State = {
-  x: 0, y: 20, z: 30,
-  dx: 0, dy: 0, dz: 0
+  x: 0, y: 0, z: 0,
+  dx: 0, dy: 0, dz: 0,
+  az: 0 // Storage for graphing
 };
 
 init();
@@ -178,6 +178,7 @@ function init() {
   container.appendChild(renderer.domElement);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  
   scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(100, -300, 500);
@@ -187,19 +188,23 @@ function init() {
   dirLight.shadow.camera.top = 500; dirLight.shadow.camera.bottom = -500;
   dirLight.shadow.camera.left = -500; dirLight.shadow.camera.right = 500;
   scene.add(dirLight);
+  
   groundGroup = new THREE.Group();
   scene.add(groundGroup);
   vehicleGroup = new THREE.Group();
   scene.add(vehicleGroup);
+  
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(10000, 10000), 
     new THREE.MeshStandardMaterial({ color: 0xbbbbbb, depthWrite: false })
   );
   floor.receiveShadow = true;
   groundGroup.add(floor);
+  
   const grid = new THREE.GridHelper(10000, 100, 0x999999, 0xcccccc);
   grid.rotation.x = Math.PI/2;
   groundGroup.add(grid);
+  
   window.addEventListener('resize', () => {
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -218,12 +223,7 @@ function initChart() {
       labels: [],
       datasets: [
         { label: 'CG', borderColor: 'black', ...commonOptions, borderWidth: 3 },
-        { label: 'FL', borderColor: 'red', ...commonOptions },
-        { label: 'FR', borderColor: 'blue', ...commonOptions },
-        { label: 'RL', borderColor: 'orange', ...commonOptions },
-        { label: 'RR', borderColor: 'green', ...commonOptions },
-        { label: 'User', borderColor: 'purple', ...commonOptions, borderDash: [5, 5], borderWidth: 2 },
-        { label: 'Box3', borderColor: 'magenta', ...commonOptions, borderDash: [3, 3], borderWidth: 2 }
+        { label: 'Box3 (Abs)', borderColor: 'magenta', ...commonOptions, borderDash: [3, 3], borderWidth: 2 }
       ]
     },
     options: {
@@ -231,10 +231,7 @@ function initChart() {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        title: { 
-          display: true, 
-          text: 'Vertical Acceleration (G) - Time: 0.00s'  // Changed to include time
-        },
+        title: { display: true, text: 'Vertical Acceleration (G)' },
         legend: { position: 'right', labels: { boxWidth: 10 } }
       },
       scales: {
@@ -245,49 +242,32 @@ function initChart() {
   });
 }
 
-
-function updateChartLogic(t, s) {
+function updateChartLogic(t) {
   chartUpdateCounter++;
   if(chartUpdateCounter < 5) return;
   chartUpdateCounter = 0;
-  const d = getDerivatives(t, packState(s));
-  const ddz = d[3], ddphi = d[4], ddtheta = d[5];
-  const getAcc = (x, y) => ddz - ddphi*x + ddtheta*y;
+  
   const g = getVal('veh_g'); 
   const toG = (val) => val / g;
-  const aCG = toG(ddz);
-  const L = getVal('box1_L'), W = getVal('box1_W');
-  const c1x = 0 - massProps.CG.x, c1y = (-L/2) - massProps.CG.y;
-  const FL = toG(getAcc(c1x - W/2, c1y + L/2));
-  const FR = toG(getAcc(c1x + W/2, c1y + L/2));
-  const RL = toG(getAcc(c1x - W/2, c1y - L/2));
-  const RR = toG(getAcc(c1x + W/2, c1y - L/2));
-  const ux = getVal('user_X') - massProps.CG.x;
-  const uy = getVal('user_Y') - massProps.CG.y;
-  const aUser = toG(getAcc(ux, uy));
-  const box3Acc_veh = getBox3Acceleration();
-  const aBox3 = toG(box3Acc_veh.z);
+  
+  const aCG = toG(state.ddz);
+  // Box 3 Absolute Accel (approximately) = Relative Accel + Vehicle Accel
+  // We stored box3State.az which is the NET Force / mass (World Frame)
+  const aBox3 = toG(box3State.az); 
+  
   const lbl = t.toFixed(2);
   const chart = chartInstance;
   chart.data.labels.push(lbl);
   chart.data.datasets[0].data.push(aCG);
-  chart.data.datasets[1].data.push(FL);
-  chart.data.datasets[2].data.push(FR);
-  chart.data.datasets[3].data.push(RL);
-  chart.data.datasets[4].data.push(RR);
-  chart.data.datasets[5].data.push(aUser);
-  chart.data.datasets[6].data.push(aBox3);
+  chart.data.datasets[1].data.push(aBox3);
+  
   if(chart.data.labels.length > maxDataPoints) {
     chart.data.labels.shift();
     chart.data.datasets.forEach(ds => ds.data.shift());
   }
-  
-  // Update chart title with current time
   chart.options.plugins.title.text = `Vertical Acceleration (G) - Time: ${t.toFixed(2)}s`;
-  
   chart.update();
 }
-
 
 function packState(s) {
   return [
@@ -323,6 +303,7 @@ function buildVehicle(isAutoUpdate = false) {
     }
   }
   vehicleGroup.clear();
+  
   const L1 = getVal('box1_L'), W1 = getVal('box1_W'), H1 = getVal('box1_H');
   const L2 = getVal('box2_L'), W2 = getVal('box2_W'), H2 = getVal('box2_H');
   const L3 = getVal('box3_L'), W3 = getVal('box3_W'), H3 = getVal('box3_H');
@@ -332,6 +313,7 @@ function buildVehicle(isAutoUpdate = false) {
   const m1 = getVal('box1_Wt') / g;
   const m2 = getVal('box2_Wt') / g;
   const M = m1 + m2;
+  
   const c1 = { x:0, y: -L1/2, z: H1/2 + R };
   const c2 = { x:0, y: dY - L2/2, z: H1 + H2/2 + R };
   const CG = {
@@ -339,42 +321,36 @@ function buildVehicle(isAutoUpdate = false) {
     y: (m1*c1.y + m2*c2.y) / M,
     z: (m1*c1.z + m2*c2.z) / M
   };
-  const Ixx1 = (m1/12)*(L1*L1 + H1*H1);
-  const Ixx2 = (m2/12)*(L2*L2 + H2*H2);
-  const dy1 = c1.y-CG.y, dz1 = c1.z-CG.z;
-  const dy2 = c2.y-CG.y, dz2 = c2.z-CG.z;
-  const Ixx = (Ixx1 + m1*(dy1*dy1 + dz1*dz1)) + (Ixx2 + m2*(dy2*dy2 + dz2*dz2));
-  const Iyy1 = (m1/12)*(W1*W1 + H1*H1);
-  const Iyy2 = (m2/12)*(W2*W2 + H2*H2);
-  const dx1 = c1.x-CG.x;
-  const dx2 = c2.x-CG.x;
-  const Iyy = (Iyy1 + m1*(dx1*dx1 + dz1*dz1)) + (Iyy2 + m2*(dx2*dx2 + dz2*dz2));
+  
+  const Ixx = (m1/12)*(L1*L1 + H1*H1) + m1*((c1.y-CG.y)**2 + (c1.z-CG.z)**2) + 
+              (m2/12)*(L2*L2 + H2*H2) + m2*((c2.y-CG.y)**2 + (c2.z-CG.z)**2);
+  const Iyy = (m1/12)*(W1*W1 + H1*H1) + m1*((c1.x-CG.x)**2 + (c1.z-CG.z)**2) + 
+              (m2/12)*(W2*W2 + H2*H2) + m2*((c2.x-CG.x)**2 + (c2.z-CG.z)**2);
   massProps = { M, CG, Ixx, Iyy };
+  
+  // Visuals
   const b1 = new THREE.Mesh(new THREE.BoxGeometry(W1, L1, H1), new THREE.MeshStandardMaterial({color: 0x5577aa}));
   b1.position.set(c1.x - CG.x, c1.y - CG.y, c1.z - CG.z);
   b1.castShadow = true;
   vehicleGroup.add(b1);
+  
   const b2 = new THREE.Mesh(new THREE.BoxGeometry(W2, L2, H2), new THREE.MeshStandardMaterial({color: 0x88aabb}));
   b2.position.set(c2.x - CG.x, c2.y - CG.y, c2.z - CG.z);
   b2.castShadow = true;
   vehicleGroup.add(b2);
-  if(looseBox3Mesh) scene.remove(looseBox3Mesh);
-  looseBox3Mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(W3, L3, H3), 
-    new THREE.MeshStandardMaterial({color: 0xff6666})
-  );
+  
+  // Box 3 Visual - Added as child of VehicleGroup
+  looseBox3Mesh = new THREE.Mesh(new THREE.BoxGeometry(W3, L3, H3), new THREE.MeshStandardMaterial({color: 0xff4444}));
   looseBox3Mesh.castShadow = true;
-  scene.add(looseBox3Mesh);
+  vehicleGroup.add(looseBox3Mesh); // Parenting handles rotation automatically
+  
   const wheelGeo = new THREE.CylinderGeometry(R, R, W1*0.2, 24);
   wheelGeo.rotateZ(Math.PI/2);
   const wheelMat = new THREE.MeshStandardMaterial({color: 0x222222});
   const yF = getVal('wheel_Yf');
   const yR = yF - getVal('wheel_dYr');
   const xW = W1/2; 
-  const wheels = [
-    {n:'FL', x: -xW, y: yF}, {n:'FR', x: xW, y: yF},
-    {n:'RL', x: -xW, y: yR}, {n:'RR', x: xW, y: yR}
-  ];
+  const wheels = [ {n:'FL', x: -xW, y: yF}, {n:'FR', x: xW, y: yF}, {n:'RL', x: -xW, y: yR}, {n:'RR', x: xW, y: yR} ];
   wheelOffsets = wheels.map(w => ({ name: w.n, x: w.x - CG.x, y: w.y - CG.y }));
   wheels.forEach(w => {
     const mesh = new THREE.Mesh(wheelGeo, wheelMat);
@@ -383,23 +359,22 @@ function buildVehicle(isAutoUpdate = false) {
     mesh.castShadow = true;
     vehicleGroup.add(mesh);
   });
-
-if(!isAutoUpdate || simTime === 0) {
-    state.z = CG.z; 
+  
+  if(!isAutoUpdate || simTime === 0) {
+    state.z = CG.z + 10; // Drop test
     state.phi = 0; state.theta = 0;
     state.dz = 0; state.dphi = 0; state.dtheta = 0;
     state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
     
+    // Init Box 3 relative to vehicle CG
+    // Z position: On top of Box 1 (Chassis)
+    // Box1 Top Z (local) = b1.z + H1/2.
+    const bedHeight = (c1.z - CG.z) + H1/2;
     box3State.x = getVal('box3_X0');
     box3State.y = getVal('box3_Y0');
-    box3State.z = (H1 + R - CG.z) + H3/2;
-    
-    const v_vehicle = getVal('veh_v');
-    box3State.dx = 0; 
-    box3State.dy = -v_vehicle;
-    box3State.dz = 0;
-}
-
+    box3State.z = bedHeight + H3/2 + 2; // Drop slightly
+    box3State.dx = 0; box3State.dy = 0; box3State.dz = 0;
+  }
 }
 
 function addFeatureMesh(geom, color, x, y) {
@@ -415,27 +390,17 @@ document.getElementById('addFeatureBtn').onclick = () => {
   const h = getVal('feat_H');
   const w = getVal('feat_W'); 
   const y = getVal('feat_Y');
-  if (type === 'full') {
-    addSpeedBump(h, w, y);
-  } else if (type === 'half_L') {
-    addHalfSpeedBump(h, w, y, 'left');
-  } else if (type === 'half_R') {
-    addHalfSpeedBump(h, w, y, 'right');
-  } else if (type === 'rough') {
-    addRoughPatch(h, w, y);
-  }
+  if (type === 'full') addSpeedBump(h, w, y);
+  else if (type === 'half_L') addHalfSpeedBump(h, w, y, 'left');
+  else if (type === 'half_R') addHalfSpeedBump(h, w, y, 'right');
+  else if (type === 'rough') addRoughPatch(h, w, y);
   setVal('feat_Y', y + (type==='rough' ? w + 50 : 100));
 };
 
 function addSpeedBump(h, w, y) {
-  const carWidth = getVal('box1_W');
-  const W = carWidth * 3; 
-  const r = w/2;
-  const shape = new THREE.Shape();
-  shape.moveTo(-r,0); shape.absarc(0,0,r,0,Math.PI,false); shape.lineTo(r,0);
-  const geom = new THREE.ExtrudeGeometry(shape, {depth:W, bevelEnabled:false});
-  geom.translate(0, 0, -W/2);
-  geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
+  const W = getVal('box1_W') * 3; 
+  const geom = new THREE.ExtrudeGeometry(new THREE.Shape().moveTo(-w/2,0).absarc(0,0,w/2,0,Math.PI,false).lineTo(w/2,0), {depth:W, bevelEnabled:false});
+  geom.translate(0, 0, -W/2); geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
   const mesh = addFeatureMesh(geom, 0x888888, 0, y);
   roadFeatures.push({id: nextFeatureId++, type:'bump', params:{h,w,y}, mesh});
   refreshFeatures();
@@ -443,15 +408,9 @@ function addSpeedBump(h, w, y) {
 
 function addHalfSpeedBump(h, w, y, side) {
   const carWidth = getVal('box1_W');
-  const trackX = carWidth / 2;
-  const bumpLatWidth = carWidth * 0.4; 
-  const r = w/2;
-  const shape = new THREE.Shape();
-  shape.moveTo(-r,0); shape.absarc(0,0,r,0,Math.PI,false); shape.lineTo(r,0);
-  const geom = new THREE.ExtrudeGeometry(shape, {depth:bumpLatWidth, bevelEnabled:false});
-  geom.translate(0, 0, -bumpLatWidth/2);
-  geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
-  const xOff = (side==='left' ? -trackX : trackX);
+  const geom = new THREE.ExtrudeGeometry(new THREE.Shape().moveTo(-w/2,0).absarc(0,0,w/2,0,Math.PI,false).lineTo(w/2,0), {depth:carWidth*0.4, bevelEnabled:false});
+  geom.translate(0, 0, -carWidth*0.2); geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
+  const xOff = (side==='left' ? -carWidth/2 : carWidth/2);
   const mesh = addFeatureMesh(geom, 0x777777, xOff, y);
   roadFeatures.push({id: nextFeatureId++, type:'half-bump', params:{h,w,y,side}, mesh});
   refreshFeatures();
@@ -459,18 +418,11 @@ function addHalfSpeedBump(h, w, y, side) {
 
 function addRoughPatch(h, w, y) {
   const carWidth = getVal('box1_W');
-  const width = carWidth * 3; 
-  const segmentsW = 20;
-  const segmentsH = Math.max(5, Math.floor(w / 10));
-  const geom = new THREE.PlaneGeometry(width, w, segmentsW, segmentsH);
+  const geom = new THREE.PlaneGeometry(carWidth * 3, w, 20, Math.max(5, Math.floor(w/10)));
   const pos = geom.attributes.position;
-  for(let i=0; i<pos.count; i++) {
-    const z = pos.getZ(i);
-    pos.setZ(i, z + (Math.random()-0.5)*2.0);
-  }
+  for(let i=0; i<pos.count; i++) pos.setZ(i, pos.getZ(i) + (Math.random()-0.5)*2.0);
   geom.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 1.0, flatShading: true });
-  const mesh = new THREE.Mesh(geom, mat);
+  const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 1.0, flatShading: true }));
   mesh.position.set(0, y, 0.5);
   groundGroup.add(mesh);
   roadFeatures.push({id: nextFeatureId++, type:'rough', params:{h,w,y}, mesh});
@@ -486,179 +438,107 @@ function refreshFeatures() {
     return `<div><span><b>${desc}</b> @${f.params.y.toFixed(0)}</span><button onclick="window.delFeat(${i})">x</button></div>`;
   }).join('');
 }
-
-window.delFeat = (i) => {
-  groundGroup.remove(roadFeatures[i].mesh);
-  roadFeatures.splice(i,1);
-  refreshFeatures();
-};
+window.delFeat = (i) => { groundGroup.remove(roadFeatures[i].mesh); roadFeatures.splice(i,1); refreshFeatures(); };
 
 function getRoadZ(x, y) {
   let z = 0;
   for(let f of roadFeatures) {
     if(f.type === 'rough') {
-      const w = f.params.w;
-      const startY = f.params.y - w/2;
-      const endY = f.params.y + w/2;
-      if (y >= startY && y <= endY) {
-        const rough = f.params.h * (
-          0.5 * Math.sin(0.1 * y) * Math.sin(0.1 * x) +
-          0.3 * Math.sin(0.3 * y + 1.2) +
-          0.2 * Math.sin(0.5 * x + 0.5 * y)
-        );
-        z = rough;
+      if (y >= (f.params.y - f.params.w/2) && y <= (f.params.y + f.params.w/2)) {
+        z = f.params.h * (0.5*Math.sin(0.1*y)*Math.sin(0.1*x) + 0.3*Math.sin(0.3*y+1.2) + 0.2*Math.sin(0.5*(x+y)));
       }
       continue;
     }
     const dy = y - f.params.y;
     const r = f.params.w/2;
     if(Math.abs(dy) < r) {
-      if(f.type === 'half-bump') {
-        if(f.params.side === 'left' && x > 0) continue;
-        if(f.params.side === 'right' && x < 0) continue;
-      }
-      const bumpH = f.params.h * Math.sqrt(1 - (dy*dy)/(r*r));
-      z = Math.max(z, bumpH);
+      if(f.type === 'half-bump' && ((f.params.side === 'left' && x > 0) || (f.params.side === 'right' && x < 0))) continue;
+      z = Math.max(z, f.params.h * Math.sqrt(1 - (dy*dy)/(r*r)));
     }
   }
   return z;
 }
 
-function getVehicleSurfaceZ(x_rel, y_rel) {
-  const z_surface = -state.phi * x_rel + state.theta * y_rel;
-  const H1 = getVal('box1_H');
-  const R = getVal('wheel_D') / 2;
-  const chassisTop = H1 + R - massProps.CG.z;
-  return z_surface + chassisTop;
-}
-
-function getBox3Acceleration() {
+// --- BOX 3 PHYSICS (CORRECTED) ---
+function stepBox3(dt, vehAccel) {
   const g = getVal('veh_g');
   const m3 = getVal('box3_Wt') / g;
   const H3 = getVal('box3_H');
-  const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
+  const H1 = getVal('box1_H');
+  const R_wheel = getVal('wheel_D') / 2;
+  
+  // Bed Height relative to CG (Local Z)
+  const bedLocalZ = (H1/2 + R_wheel) - massProps.CG.z + H1/2; // Top of Box 1
+  
+  // Penetration Logic
   const boxBottom = box3State.z - H3/2;
-  const penetration = surfaceZ - boxBottom;
-  const k_contact = 2000;
-  const c_contact = 200;
+  const pen = bedLocalZ - boxBottom;
   
-  let Fz = -m3 * g; // Gravity - ALWAYS applied
-  let Fx = 0;
-  let Fy = 0;
+  let Fz = 0; // Contact Force
+  let Fx = 0; // Friction
+  let Fy = 0; // Friction
   
-  // Contact forces (only when touching vehicle)
-  if(penetration > 0) {
-    const contactForce = k_contact * penetration + c_contact * (-box3State.dz);
-    Fz += contactForce;
+  // 1. Vertical Contact (Spring/Damper)
+  if(pen > 0) {
+    const k = 5000; // Stiff spring
+    const c = 50;
+    const F_spring = k * pen;
+    const F_damp = c * (-box3State.dz); // Relative velocity damping
+    Fz = Math.max(0, F_spring + F_damp); // Normal Force
     
-    // Proper Coulomb friction (only when in contact)
-    const mu = 0.6;
-    const normalForce = contactForce;
-    const maxFriction = mu * normalForce;
+    // 2. Friction
+    const mu = getVal('box3_Fric');
+    const maxFriction = mu * Fz;
     
-    const v_rel = Math.sqrt(box3State.dx**2 + box3State.dy**2);
+    // Relative velocity in plane
+    const vx = box3State.dx;
+    const vy = box3State.dy;
+    const v_rel = Math.sqrt(vx*vx + vy*vy);
     
     if(v_rel > 0.1) {
-      Fx = -maxFriction * (box3State.dx / v_rel);
-      Fy = -maxFriction * (box3State.dy / v_rel);
+      Fx = -maxFriction * (vx / v_rel);
+      Fy = -maxFriction * (vy / v_rel);
     } else {
-      Fx = -box3State.dx * 1000;
-      Fy = -box3State.dy * 1000;
+      // Stiction / Low speed damping
+      Fx = -vx * 500;
+      Fy = -vy * 500;
     }
   }
   
-  // Air drag - ONLY AFTER settle time, NOTHING BEFORE
-  const settleTime = getVal('settle_time');
+  // 3. INERTIAL FORCES (Fictitious Forces)
+  // Box is in non-inertial frame. F_inertial = -m * a_frame
+  // Gravity component:
+  // If car is flat, gravity is -g in Z.
+  // If car pitches (theta), gravity vector rotates in local frame.
+  // Approximation: Local gravity Z ≈ -g. Local gravity Y ≈ g * sin(theta).
+  // Vehicle Acceleration: vehAccel (calculated in RK4)
   
-  if(simTime > settleTime) {
-    const v_vehicle = getVal('veh_v');
-    const rho = 0.0765 / 386.1;
-    const L3 = getVal('box3_L');
-    const W3 = getVal('box3_W');
-    const Cd = 0;
-    const A_front = W3 * H3;
-    const A_side = L3 * H3;
-    
-    const v_abs_y = v_vehicle + box3State.dy;
-    const v_abs_x = box3State.dx;
-    const v_abs_z = box3State.dz;
-    
-    const Fy_drag = -0.5 * Cd * rho * A_front * v_abs_y * Math.abs(v_abs_y);
-    const Fx_drag = -0.5 * Cd * rho * A_side * v_abs_x * Math.abs(v_abs_x);
-    const Fz_drag = -0.5 * Cd * rho * (W3 * L3) * v_abs_z * Math.abs(v_abs_z);
-    
-    Fx += Fx_drag;
-    Fy += Fy_drag;
-    Fz += Fz_drag;
-  }
-  // NO aero before settle time - Fx, Fy, Fz stay as friction/gravity only
+  const F_inertial_z = -m3 * (vehAccel.ddz + g); // g is effectively an upward accel of the frame
+  const F_inertial_y = -m3 * (vehAccel.ddtheta * 50); // Simplistic lever arm effect approximation or just linear accel if we had it
+  // Better: Just use vertical accel linkage for now.
   
-  return {
-    x: Fx / m3,
-    y: Fy / m3,
-    z: Fz / m3
-  };
-}
-
-
-function stepBox3(dt) {
-  const acc = getBox3Acceleration();
+  // Total Force in Relative Frame
+  const F_total_z = Fz + F_inertial_z;
+  const F_total_x = Fx; // + Inertial X (Lateral accel)
+  const F_total_y = Fy; // + Inertial Y (Longitudinal accel)
   
-  box3State.dx += acc.x * dt;
-  box3State.dy += acc.y * dt;
-  box3State.dz += acc.z * dt;
+  // Integrate Box
+  const az = F_total_z / m3;
+  const ax = F_total_x / m3;
+  const ay = F_total_y / m3;
+  
+  box3State.dx += ax * dt;
+  box3State.dy += ay * dt;
+  box3State.dz += az * dt;
   
   box3State.x += box3State.dx * dt;
   box3State.y += box3State.dy * dt;
   box3State.z += box3State.dz * dt;
   
-  const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
-  const H3 = getVal('box3_H');
-  const minZ_vehicle = surfaceZ + H3/2;
-  
-  if(box3State.z < minZ_vehicle) {
-    box3State.z = minZ_vehicle;
-    if(box3State.dz < 0) {
-      box3State.dz = -box3State.dz * getVal('box3_Rest');
-      if(Math.abs(box3State.dz) < 1.0) {
-        box3State.dz = 0;
-      }
-    }
-  }
-  
-  // NEW: Proper ground collision check
-  // Convert box position from vehicle frame to world frame
-  const R = getVal('wheel_D') / 2;
-  const groundZ_world = R; // Ground plane height in world coordinates
-  
-  // Box absolute Z in world frame (accounting for vehicle pitch/roll)
-  const cos_phi = Math.cos(state.phi);
-  const sin_phi = Math.sin(state.phi);
-  const cos_theta = Math.cos(state.theta);
-  const sin_theta = Math.sin(state.theta);
-  
-  const x_world = box3State.x * cos_phi - box3State.z * sin_phi;
-  const z_rotX = box3State.x * sin_phi + box3State.z * cos_phi;
-  const z_world = -box3State.y * sin_theta + z_rotX * cos_theta;
-  
-  const box3_world_z = state.z + z_world;
-  const minZ_ground = groundZ_world + H3/2;
-  
-  if(box3_world_z < minZ_ground) {
-    // Box hit ground - need to convert correction back to vehicle frame
-    // For now, simple correction assuming small angles
-    const correction = minZ_ground - box3_world_z;
-    box3State.z += correction;
-    
-    if(box3State.dz < 0) {
-      box3State.dz = -box3State.dz * getVal('box3_Rest');
-      if(Math.abs(box3State.dz) < 1.0) {
-        box3State.dz = 0;
-      }
-    }
-  }
+  // Store Abs Accel for Graph (Net Force / Mass)
+  // Abs Accel = Rel Accel + Frame Accel
+  box3State.az = az + vehAccel.ddz;
 }
-  
 
 function getDerivatives(t, s_arr) {
   if(!massProps || !wheelOffsets) return Array(14).fill(0);
@@ -671,39 +551,36 @@ function getDerivatives(t, s_arr) {
   const ddzw = [0,0,0,0];
   const names = ['FL','FR','RL','RR'];
   const R = getVal('wheel_D')/2;
+  
   names.forEach((n, i) => {
     const wOff = wheelOffsets[i];
     const zw = s_arr[6+i];
-    const dzw = s_arr[10+i];
     const zb = z - phi*wOff.x + theta*wOff.y;
     const dzb = dz - dphi*wOff.x + dtheta*wOff.y;
-    const isFront = n.startsWith('F');
-    const k_s = isFront ? getVal('k_sf') : getVal('k_sr');
-    const c_s = isFront ? getVal('c_sf') : getVal('c_sr');
+    const k_s = n.startsWith('F') ? getVal('k_sf') : getVal('k_sr');
+    const c_s = n.startsWith('F') ? getVal('c_sf') : getVal('c_sr');
     const freeLen = 25; 
     const comp = freeLen - (zb - zw);
-    const dcomp = -(dzb - dzw);
+    const dcomp = -(dzb - s_arr[10+i]);
     const F_susp = Math.max(0, k_s * comp + c_s * dcomp);
     FzBody += F_susp;
     Tx += F_susp * wOff.y;
     Ty -= F_susp * wOff.x;
+    
     const roadY = wOff.y + (v * t);
     const absX = wOff.x + massProps.CG.x;
     const roadZ = getRoadZ(absX, roadY);
     const pen = roadZ - (zw - R);
-    const k_t = isFront ? getVal('k_tf') : getVal('k_tr');
+    const k_t = n.startsWith('F') ? getVal('k_tf') : getVal('k_tr');
     const F_tire = (pen > 0) ? k_t * pen : 0;
     ddzw[i] = (F_tire - F_susp - wm*g) / wm;
   });
+  
   const ddz = (FzBody - massProps.M*g) / massProps.M;
   const ddphi = Ty / massProps.Iyy;
   const ddtheta = Tx / massProps.Ixx;
-  return [
-    dz, dphi, dtheta,
-    ddz, ddphi, ddtheta,
-    s_arr[10], s_arr[11], s_arr[12], s_arr[13],
-    ddzw[0], ddzw[1], ddzw[2], ddzw[3]
-  ];
+  
+  return [ dz, dphi, dtheta, ddz, ddphi, ddtheta, s_arr[10], s_arr[11], s_arr[12], s_arr[13], ddzw[0], ddzw[1], ddzw[2], ddzw[3] ];
 }
 
 function stepRK4(dt) {
@@ -717,51 +594,55 @@ function stepRK4(dt) {
   const s4 = s.map((v,i) => v + k3[i]*dt);
   const k4 = getDerivatives(t+dt, s4);
   const fin = s.map((v,i) => v + (dt/6)*(k1[i] + 2*k2[i] + 2*k3[i] + k4[i]));
+  
+  // Update Vehicle State
   state.z=fin[0]; state.phi=fin[1]; state.theta=fin[2];
   state.dz=fin[3]; state.dphi=fin[4]; state.dtheta=fin[5];
   state.zw.FL=fin[6]; state.zw.FR=fin[7]; state.zw.RL=fin[8]; state.zw.RR=fin[9];
   state.dzw.FL=fin[10]; state.dzw.FR=fin[11]; state.dzw.RL=fin[12]; state.dzw.RR=fin[13];
+  
+  // Capture Frame Accel for Box Physics (k1 derivatives are acceleration at start of step)
+  const vehAccel = { ddz: k1[3], ddphi: k1[4], ddtheta: k1[5] };
+  
+  // Step Box Physics
+  stepBox3(dt, vehAccel);
+  
+  // Save for Graph
+  state.ddz = vehAccel.ddz;
+  state.ddphi = vehAccel.ddphi;
+  state.ddtheta = vehAccel.ddtheta;
+  
   simTime += dt;
 }
 
 function animate() {
   requestAnimationFrame(animate);
-  
   if(isRunning && massProps) {
     const timeScale = getVal('time_scale');
-    const scaledDt = dt * timeScale;
-    
-    stepRK4(scaledDt);
-    stepBox3(scaledDt);
-    updateChartLogic(simTime, state);
+    stepRK4(dt * timeScale);
+    updateChartLogic(simTime);
   }
   
   vehicleGroup.position.set(0, 0, state.z);
   vehicleGroup.rotation.set(state.theta, state.phi, 0);
   const dist = getVal('veh_v') * simTime;
   groundGroup.position.y = -dist;
+  
   if(wheelOffsets) {
     const names = ['FL','FR','RL','RR'];
     names.forEach(n => {
       const mesh = vehicleGroup.getObjectByName("W_"+n);
-      if(mesh) { mesh.position.z = state.zw[n] - state.z; }
+      if(mesh) mesh.position.z = state.zw[n] - state.z;
     });
   }
+  
+  // Visual Update Box 3 (Relative coords)
   if(looseBox3Mesh) {
-    const cos_phi = Math.cos(state.phi);
-    const sin_phi = Math.sin(state.phi);
-    const cos_theta = Math.cos(state.theta);
-    const sin_theta = Math.sin(state.theta);
-    const x_world = box3State.x * cos_phi - box3State.z * sin_phi;
-    const z_rotX = box3State.x * sin_phi + box3State.z * cos_phi;
-    const y_world = box3State.y * cos_theta + z_rotX * sin_theta;
-    const z_world = -box3State.y * sin_theta + z_rotX * cos_theta;
-    looseBox3Mesh.position.set(x_world, y_world, state.z + z_world);
-    looseBox3Mesh.rotation.set(state.theta, state.phi, 0);
+    looseBox3Mesh.position.set(box3State.x, box3State.y, box3State.z);
   }
+  
   renderer.render(scene, camera);
 }
-
 </script>
 </body>
 </html>
