@@ -559,17 +559,16 @@ function getBox3Acceleration() {
     const v_rel = Math.sqrt(box3State.dx**2 + box3State.dy**2);
     
     
+
 if(v_rel > 0.1) {
-  // Kinetic friction opposes velocity - use actual direction
   Fx = -box3State.dx * (maxFriction / v_rel);
   Fy = -box3State.dy * (maxFriction / v_rel);
 } else {
-  // Static friction
-  Fx = -box3State.dx * 1000;
-  Fy = -box3State.dy * 1000;
+  // Static friction - clamp to maxFriction
+  const staticDamping = 1000;
+  Fx = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dx * staticDamping));
+  Fy = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dy * staticDamping));
 }
-
-
 
     // DEBUG OUTPUT
     if(simTime < 1.0) {
@@ -757,6 +756,7 @@ function animate() {
 </script>
 </body>
 </html>
+
 
 
 
