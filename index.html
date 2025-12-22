@@ -231,7 +231,10 @@ function initChart() {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        title: { display: true, text: 'Vertical Acceleration (G)' },
+        title: { 
+          display: true, 
+          text: 'Vertical Acceleration (G) - Time: 0.00s'  // Changed to include time
+        },
         legend: { position: 'right', labels: { boxWidth: 10 } }
       },
       scales: {
@@ -241,6 +244,7 @@ function initChart() {
     }
   });
 }
+
 
 function updateChartLogic(t, s) {
   chartUpdateCounter++;
@@ -277,8 +281,13 @@ function updateChartLogic(t, s) {
     chart.data.labels.shift();
     chart.data.datasets.forEach(ds => ds.data.shift());
   }
+  
+  // Update chart title with current time
+  chart.options.plugins.title.text = `Vertical Acceleration (G) - Time: ${t.toFixed(2)}s`;
+  
   chart.update();
 }
+
 
 function packState(s) {
   return [
@@ -566,7 +575,7 @@ function getBox3Acceleration() {
     const rho = 0.0765 / 386.1;
     const L3 = getVal('box3_L');
     const W3 = getVal('box3_W');
-    const Cd = 1.2;
+    const Cd = 0;
     const A_front = W3 * H3;
     const A_side = L3 * H3;
     
@@ -756,6 +765,7 @@ function animate() {
 </script>
 </body>
 </html>
+
 
 
 
