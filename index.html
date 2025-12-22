@@ -753,17 +753,18 @@ function animate() {
     });
   }
 if(looseBox3Mesh) {
-  // Box is already in world coordinates!
-  looseBox3Mesh.position.set(box3State.x, box3State.y, box3State.z);
-  looseBox3Mesh.rotation.set(0, 0, 0);  // Box doesn't rotate (yet)
+  // Box Y position needs to account for ground movement
+  const dist = getVal('veh_v') * simTime;
+  looseBox3Mesh.position.set(box3State.x, box3State.y - dist, box3State.z);
+  looseBox3Mesh.rotation.set(0, 0, 0);
 }
-
   renderer.render(scene, camera);
 }
 
 </script>
 </body>
 </html>
+
 
 
 
