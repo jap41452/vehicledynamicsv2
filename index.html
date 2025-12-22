@@ -688,17 +688,22 @@ function animate() {
     });
   }
 if(looseBox3Mesh) {
-  // Box Y position needs to account for ground movement
+  
+  // Box is in world coordinates, but we need to render relative to moving camera view
+  // The ground moves by -dist, so box needs to move by -dist too for rendering
   const dist = getVal('veh_v') * simTime;
   looseBox3Mesh.position.set(box3State.x, box3State.y - dist, box3State.z);
   looseBox3Mesh.rotation.set(0, 0, 0);
 }
+
+
   renderer.render(scene, camera);
 }
 
 </script>
 </body>
 </html>
+
 
 
 
