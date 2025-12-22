@@ -153,9 +153,10 @@ const state = {
   dzw: { FL:0, FR:0, RL:0, RR:0 }
 };
 
+// Box 3 (loose) state - IN WORLD COORDINATES
 const box3State = {
-  x: 0, y: 20, z: 30,
-  dx: 0, dy: 0, dz: 0
+  x: 0, y: 0, z: 50,           // World position
+  dx: 0, dy: 0, dz: 0          // World velocity
 };
 
 init();
@@ -384,22 +385,24 @@ function buildVehicle(isAutoUpdate = false) {
     vehicleGroup.add(mesh);
   });
 
+
 if(!isAutoUpdate || simTime === 0) {
     state.z = CG.z; 
     state.phi = 0; state.theta = 0;
     state.dz = 0; state.dphi = 0; state.dtheta = 0;
     state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
     
-    box3State.x = getVal('box3_X0');
-    box3State.y = getVal('box3_Y0');
-    box3State.z = (H1 + R - CG.z) + H3/2;
+    // Initialize Box 3 in WORLD coordinates
+    box3State.x = getVal('box3_X0');  // Lateral position
+    box3State.y = getVal('box3_Y0');  // Longitudinal position
+    box3State.z = H1 + R + H3/2;      // Sitting on top of chassis
     
+    // Start with vehicle velocity (world frame)
     const v_vehicle = getVal('veh_v');
-    box3State.dx = 0; 
-    box3State.dy = -v_vehicle;
-    box3State.dz = 0;
+    box3State.dx = 0;           // No lateral velocity
+    box3State.dy = v_vehicle;   // Moving forward (POSITIVE in world)
+    box3State.dz = 0;           // No vertical velocity
 }
-
 }
 
 function addFeatureMesh(geom, color, x, y) {
@@ -532,101 +535,126 @@ function getVehicleSurfaceZ(x_rel, y_rel) {
   return z_surface + chassisTop;
 }
 
-
 function getBox3Acceleration() {
   const g = getVal('veh_g');
   const m3 = getVal('box3_Wt') / g;
   const H3 = getVal('box3_H');
-  const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
-  const boxBottom = box3State.z - H3/2;
-  const penetration = surfaceZ - boxBottom;
-  const k_contact = 2000;
-  const c_contact = 200;
   
-  let Fz = -m3 * g;
-  let Fx = 0;
-  let Fy = 0;
+  // Forces in WORLD frame
+  let Fx_world = 0;
+  let Fy_world = 0;
+  let Fz_world = -m3 * g;  // Gravity (always down in world)
   
-  const settleTime = getVal('settle_time');
+  // Get vehicle surface position in WORLD coordinates
+  // Vehicle CG is at (0, 0, state.z) in world
+  // Box is at (box3State.x, box3State.y, box3State.z) in world
   
+  // Transform box position to vehicle frame to check contact
+  const cos_phi = Math.cos(state.phi);
+  const sin_phi = Math.sin(state.phi);
+  const cos_theta = Math.cos(state.theta);
+  const sin_theta = Math.sin(state.theta);
+  
+  // Box position relative to vehicle CG in world
+  const dx_world = box3State.x - 0;  // Vehicle is at x=0
+  const dy_world = box3State.y - 0;  // Vehicle is at y=0  
+  const dz_world = box3State.z - state.z;
+  
+  // Rotate to vehicle frame to find local position on vehicle
+  // Inverse rotation: rotate by -phi around Y, then -theta around X
+  const x_veh = dx_world * cos_phi + dz_world * sin_phi;
+  const z_temp = -dx_world * sin_phi + dz_world * cos_phi;
+  const y_veh = dy_world * cos_theta - z_temp * sin_theta;
+  const z_veh = dy_world * sin_theta + z_temp * cos_theta;
+  
+  // Check if box is over the vehicle surface
+  const H1 = getVal('box1_H');
+  const R = getVal('wheel_D') / 2;
+  const chassisTop_veh = H1 + R - massProps.CG.z;
+  const surfaceZ_veh = chassisTop_veh - state.phi * x_veh + state.theta * y_veh;
+  
+  const boxBottom_veh = z_veh - H3/2;
+  const penetration = surfaceZ_veh - boxBottom_veh;
+  
+  // Contact forces
   if(penetration > 0) {
-    const contactForce = k_contact * penetration + c_contact * (-box3State.dz);
-    Fz += contactForce;
+    const k_contact = 2000;
+    const c_contact = 200;
     
-    // Only apply friction AFTER settling
-    if(simTime > settleTime) {
+    // Relative velocity in vehicle frame (for damping)
+    const vx_veh = box3State.dx * cos_phi + box3State.dz * sin_phi;
+    const vz_temp = -box3State.dx * sin_phi + box3State.dz * cos_phi;
+    const vy_veh = box3State.dy * cos_theta - vz_temp * sin_theta;
+    const vz_veh = box3State.dy * sin_theta + vz_temp * cos_theta;
+    
+    const contactForce = k_contact * penetration + c_contact * (-vz_veh);
+    
+    // Normal force points up in vehicle frame, transform to world
+    const Fz_contact_veh = contactForce;
+    
+    // Transform normal force back to world frame
+    // Normal is in +Z direction in vehicle frame
+    Fx_world += Fz_contact_veh * sin_phi;
+    Fy_world += Fz_contact_veh * sin_theta;
+    Fz_world += Fz_contact_veh * cos_phi * cos_theta;
+    
+    // Friction (opposes velocity in contact plane)
+    if(contactForce > 0) {
       const mu = 0.6;
-      const normalForce = contactForce;
+      const maxFriction = mu * contactForce;
       
-      if(normalForce > 0) {
-        const maxFriction = mu * normalForce;
-        const v_rel = Math.sqrt(box3State.dx**2 + box3State.dy**2);
-        
-        if(v_rel > 0.1) {
-          Fx = -box3State.dx * (maxFriction / v_rel);
-          Fy = -box3State.dy * (maxFriction / v_rel);
-        } else {
-          const staticDamping = 1000;
-          Fx = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dx * staticDamping));
-          Fy = Math.max(-maxFriction, Math.min(maxFriction, -box3State.dy * staticDamping));
-        }
+      // Velocity magnitude in XY plane (world frame)
+      const v_horiz = Math.sqrt(box3State.dx**2 + box3State.dy**2);
+      
+      if(v_horiz > 0.1) {
+        const Fx_friction = -maxFriction * (box3State.dx / v_horiz);
+        const Fy_friction = -maxFriction * (box3State.dy / v_horiz);
+        Fx_world += Fx_friction;
+        Fy_world += Fy_friction;
       }
-    }
-    
-    if(simTime < 1.0) {
-      console.log(`t=${simTime.toFixed(3)}, dy=${box3State.dy.toFixed(1)}, Fy=${Fy.toFixed(1)}, normalF=${contactForce.toFixed(1)}, pen=${penetration.toFixed(3)}`);
     }
   }
   
-  const Cd = 0.0;
+  // Ground collision (simple - box bottom vs ground)
+  const R = getVal('wheel_D') / 2;
+  const groundZ = R;
+  const boxBottom_world = box3State.z - H3/2;
+  
+  if(boxBottom_world < groundZ) {
+    const ground_penetration = groundZ - boxBottom_world;
+    const k_ground = 5000;
+    const c_ground = 300;
+    const groundForce = k_ground * ground_penetration + c_ground * (-box3State.dz);
+    Fz_world += groundForce;
+  }
   
   return {
-    x: Fx / m3,
-    y: Fy / m3,
-    z: Fz / m3
+    x: Fx_world / m3,
+    y: Fy_world / m3,
+    z: Fz_world / m3
   };
 }
   
 function stepBox3(dt) {
   const acc = getBox3Acceleration();
   
+  // Simple integration in world frame
   box3State.dx += acc.x * dt;
   box3State.dy += acc.y * dt;
   box3State.dz += acc.z * dt;
   
-  // NEW: During settling, keep box GLUED to vehicle surface
-  const settleTime = getVal('settle_time');
-  if(simTime < settleTime) {
-    const v_vehicle = getVal('veh_v');
-    box3State.dx = 0;
-    box3State.dy = -v_vehicle;
-    // Don't lock dz to 0 - let it follow vehicle motion
-    // Instead, force the box to sit ON the vehicle surface
-    const H3 = getVal('box3_H');
-    const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
-    box3State.z = surfaceZ + H3/2;  // Force box to sit on surface
-    box3State.dz = 0;  // No relative vertical motion
-  }
-  
   box3State.x += box3State.dx * dt;
   box3State.y += box3State.dy * dt;
   box3State.z += box3State.dz * dt;
-
-
-
-
   
-  // ... rest of function
-
-
-
-  
-  const surfaceZ = getVehicleSurfaceZ(box3State.x, box3State.y);
+  // Ground collision with bounce
   const H3 = getVal('box3_H');
-  const minZ_vehicle = surfaceZ + H3/2;
+  const R = getVal('wheel_D') / 2;
+  const groundZ = R;
+  const minZ_ground = groundZ + H3/2;
   
-  if(box3State.z < minZ_vehicle) {
-    box3State.z = minZ_vehicle;
+  if(box3State.z < minZ_ground) {
+    box3State.z = minZ_ground;
     if(box3State.dz < 0) {
       box3State.dz = -box3State.dz * getVal('box3_Rest');
       if(Math.abs(box3State.dz) < 1.0) {
@@ -634,7 +662,7 @@ function stepBox3(dt) {
       }
     }
   }
-
+}
 
 
 
@@ -760,24 +788,19 @@ function animate() {
       if(mesh) { mesh.position.z = state.zw[n] - state.z; }
     });
   }
-  if(looseBox3Mesh) {
-    const cos_phi = Math.cos(state.phi);
-    const sin_phi = Math.sin(state.phi);
-    const cos_theta = Math.cos(state.theta);
-    const sin_theta = Math.sin(state.theta);
-    const x_world = box3State.x * cos_phi - box3State.z * sin_phi;
-    const z_rotX = box3State.x * sin_phi + box3State.z * cos_phi;
-    const y_world = box3State.y * cos_theta + z_rotX * sin_theta;
-    const z_world = -box3State.y * sin_theta + z_rotX * cos_theta;
-    looseBox3Mesh.position.set(x_world, y_world, state.z + z_world);
-    looseBox3Mesh.rotation.set(state.theta, state.phi, 0);
-  }
+if(looseBox3Mesh) {
+  // Box is already in world coordinates!
+  looseBox3Mesh.position.set(box3State.x, box3State.y, box3State.z);
+  looseBox3Mesh.rotation.set(0, 0, 0);  // Box doesn't rotate (yet)
+}
+
   renderer.render(scene, camera);
 }
 
 </script>
 </body>
 </html>
+
 
 
 
