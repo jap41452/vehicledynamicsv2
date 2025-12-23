@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Vehicle Dynamics - Final Fix</title>
+<title>Vehicle Dynamics - Final Physics & Imports</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   body { margin:0; font-family:sans-serif; background:#eaeaea; overflow: hidden; }
   #container { display:flex; height:100vh; width: 100vw; flex-direction: column; }
@@ -124,8 +124,9 @@
 </div>
 
 <script type="module">
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+// DIRECT IMPORTS - No Map Required
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 
 let scene, camera, renderer, controls;
 let vehicleGroup, groundGroup, looseBox3Mesh;
@@ -148,7 +149,6 @@ const state = {
   ddz: 0 // Storage for graphing
 };
 
-// Box3 State (Local to Vehicle)
 const box3State = {
   x: 0, y: 0, z: 0,
   dx: 0, dy: 0, dz: 0,
@@ -498,12 +498,11 @@ function stepBox3(dt, vehAccel) {
   
   const bedLocalZ = (H1/2 + R_wheel) - massProps.CG.z + H1/2; 
   
-  // Calculate Mass-Adaptive parameters
   const targetSquish = 0.5; 
   const k = (m3 * g) / targetSquish;
   
   const zeta_comp = 0.5;
-  const zeta_reb = 0.01; // Low damping on rebound for bounce
+  const zeta_reb = 0.01;
   const c_comp = 2 * zeta_comp * Math.sqrt(k * m3);
   const c_reb = 2 * zeta_reb * Math.sqrt(k * m3);
   
@@ -511,21 +510,16 @@ function stepBox3(dt, vehAccel) {
   const sinP = Math.sin(state.phi), cosP = Math.cos(state.phi);
   const sinT = Math.sin(state.theta), cosT = Math.cos(state.theta);
   
-  // G_local_x =  g * sin(theta)
-  // G_local_y = -g * sin(phi) * cos(theta)
-  // G_local_z = -g * cos(phi) * cos(theta)
   const Fg_x = m3 * g * sinT;
   const Fg_y = m3 * g * (-sinP * cosT);
   const Fg_z = m3 * g * (-cosP * cosT);
 
   for(let i=0; i<substeps; i++) {
-    // 1. Bed Boundary Check
     const onBedX = Math.abs(box3State.x) < W1/2;
     const b1cy = (-L1/2) - massProps.CG.y;
     const minY = b1cy - L1/2;
     const maxY = b1cy + L1/2;
     const onBedY = box3State.y > minY && box3State.y < maxY;
-    
     const isOverBed = onBedX && onBedY;
     
     const boxBottom = box3State.z - H3/2;
@@ -557,35 +551,29 @@ function stepBox3(dt, vehAccel) {
     
     // GROUND CHECK (Precise World Coords)
     const lz = box3State.z - H3/2;
-    // Z_w_rel = -sinT*x + sinP*cosT*y + cosP*cosT*lz
     const rotZ = -sinT*box3State.x + sinP*cosT*box3State.y + cosP*cosT*lz;
     const worldBottomZ = state.z + rotZ;
     const groundHeight = 0;
     
     if (worldBottomZ < groundHeight) {
-       // Ground Contact
        const penGround = groundHeight - worldBottomZ;
        const k_g = k; 
        const F_g_mag = k_g * penGround; 
        
-       // Add components to local forces (Up_local vector)
        Fx += F_g_mag * (-sinT);
        Fy += F_g_mag * (sinP * cosT);
        Fz += F_g_mag * (cosP * cosT);
        
-       // Ground Friction (Damping absolute motion)
+       // Ground Friction
        Fx -= box3State.dx * 10.0;
        Fy -= box3State.dy * 10.0;
-       
        const v_car = getVal('veh_v');
        const dragCoeff = 20.0;
        Fy -= (box3State.dy + v_car) * dragCoeff; 
     }
 
-    // Inertial Forces (Fictitious forces from vehicle accel)
     const F_inertial_z = -m3 * vehAccel.ddz; 
     
-    // Sum Forces
     const F_total_x = Fx + Fg_x;
     const F_total_y = Fy + Fg_y;
     const F_total_z = Fz + Fg_z + F_inertial_z;
