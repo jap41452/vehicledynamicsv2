@@ -497,11 +497,12 @@ function stepBox3(dt, vehAccel) {
   
   const bedLocalZ = (H1/2 + R_wheel) - massProps.CG.z + H1/2; 
   
+  // Calculate Mass-Adaptive parameters
   const targetSquish = 0.5; 
   const k = (m3 * g) / targetSquish;
   
   const zeta_comp = 0.5;
-  const zeta_reb = 0.01;
+  const zeta_reb = 0.01; // Low damping on rebound for bounce
   const c_comp = 2 * zeta_comp * Math.sqrt(k * m3);
   const c_reb = 2 * zeta_reb * Math.sqrt(k * m3);
   
