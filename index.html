@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Vehicle Dynamics - Adaptive Cargo Physics</title>
+<title>Vehicle Dynamics - Finite Bed Physics</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -153,13 +153,15 @@ const state = {
   dz: 0, dphi: 0, dtheta: 0,
   zw: { FL:30, FR:30, RL:30, RR:30 },
   dzw: { FL:0, FR:0, RL:0, RR:0 },
-  ddz: 0, ddphi: 0, ddtheta: 0 // Storage for graphing
+  ddz: 0, ddphi: 0, ddtheta: 0 
 };
 
+// Box3 State (Local to Vehicle)
 const box3State = {
   x: 0, y: 0, z: 0,
   dx: 0, dy: 0, dz: 0,
-  az: 0 
+  az: 0,
+  isOffBed: false // Track if it has fallen off
 };
 
 init();
@@ -259,37 +261,15 @@ function updateChartLogic(t) {
   const g = getVal('veh_g'); 
   const toG = (val) => val / g;
   
-  // 1. CG Acceleration
   const aCG = toG(state.ddz);
+  const aBox3 = toG(box3State.az);
   
-  // 2. Chassis Corners Acceleration
-  // Accel(P) = ddz - ddphi*x + ddtheta*y (Small angle approximation)
-  // Need coordinates relative to CG.
   const L = getVal('box1_L');
   const W = getVal('box1_W');
-  
-  // Box 1 center relative to CG
-  // Note: Vehicle is built such that mesh position is (c1.x - CG.x, c1.y - CG.y).
-  // If Box 1 is at 0,0 local, then corners are at +/- W/2, +/- L/2 relative to Box1 center.
-  // We need to fetch the CG offsets calculated in buildVehicle.
-  // But those were local vars. Let's recalculate simply:
-  // We need the X/Y of the corners relative to the CG.
-  // Since we construct the car assuming symmetric width, CG.x is roughly 0 (unless offset cargo).
-  // Let's use the actual massProps.CG if available, or just re-derive.
-  // Actually, wheelOffsets are already relative to CG.
-  // FL Corner is essentially Wheel FL location (visually).
-  // Let's use the explicit corner coordinates of Box 1.
-  
-  // Box1 Position relative to CG:
-  // We know Box1 Center is at: 
-  // x = 0 - massProps.CG.x (Assuming Box1 starts at X=0)
-  // y = -L/2 - massProps.CG.y (Assuming Box1 starts at Y=-L/2... wait, check buildVehicle)
-  // In buildVehicle: c1 = { x:0, y: -L1/2... }
   const c1x = 0 - massProps.CG.x;
   const c1y = (-L/2) - massProps.CG.y;
   
   const getCornerAcc = (dx, dy) => {
-    // x, y relative to CG
     const x = c1x + dx;
     const y = c1y + dy;
     return toG(state.ddz - state.ddphi * x + state.ddtheta * y);
@@ -300,16 +280,9 @@ function updateChartLogic(t) {
   const aRL = getCornerAcc(-W/2, -L/2);
   const aRR = getCornerAcc(W/2, -L/2);
   
-  // 3. User Point
-  const userX_global = getVal('user_X'); // Input is relative to origin? Or CG? 
-  // Let's assume input is relative to the "Vehicle Origin" (where X=0, Y=0 is front axle or geometric center before CG shift).
-  // Effectively: user_X - massProps.CG.x
-  const ux = userX_global - massProps.CG.x;
+  const ux = getVal('user_X') - massProps.CG.x;
   const uy = getVal('user_Y') - massProps.CG.y;
   const aUser = toG(state.ddz - state.ddphi * ux + state.ddtheta * uy);
-  
-  // 4. Box 3 Absolute Accel
-  const aBox3 = toG(box3State.az); 
   
   const lbl = t.toFixed(2);
   const chart = chartInstance;
@@ -431,6 +404,7 @@ function buildVehicle(isAutoUpdate = false) {
     box3State.y = getVal('box3_Y0');
     box3State.z = bedHeight + H3/2 + 2; 
     box3State.dx = 0; box3State.dy = 0; box3State.dz = 0;
+    box3State.isOffBed = false;
   }
 }
 
@@ -516,7 +490,7 @@ function getRoadZ(x, y) {
   return z;
 }
 
-// --- SUB-STEPPED BOX PHYSICS (ADAPTIVE) ---
+// --- SUB-STEPPED BOX PHYSICS (WITH BED BOUNDARIES) ---
 function stepBox3(dt, vehAccel) {
   const substeps = 10;
   const subDt = dt / substeps;
@@ -525,37 +499,47 @@ function stepBox3(dt, vehAccel) {
   const m3 = getVal('box3_Wt') / g;
   const H3 = getVal('box3_H');
   const H1 = getVal('box1_H');
+  const W1 = getVal('box1_W');
+  const L1 = getVal('box1_L');
   const R_wheel = getVal('wheel_D') / 2;
   
   const bedLocalZ = (H1/2 + R_wheel) - massProps.CG.z + H1/2; 
   
-  // --- ADAPTIVE PARAMETER CALCULATION ---
-  // 1. Calculate stiffness k to give 0.5 inch deflection under 1G load
-  // k = Force / Deflection = (m3 * g) / 0.5
-  const targetSquish = 0.5; // inch
+  const targetSquish = 0.5; 
   const k = (m3 * g) / targetSquish;
   
-  // 2. Calculate damping coefficients for Asymmetric Damping
-  // c = 2 * zeta * sqrt(k * m)
-  const zeta_comp = 0.5; // Critical-ish for impact
-  const zeta_reb = 0.01; // Almost zero for bouncing
+  const zeta_comp = 0.5;
+  const zeta_reb = 0.01;
   const c_comp = 2 * zeta_comp * Math.sqrt(k * m3);
   const c_reb = 2 * zeta_reb * Math.sqrt(k * m3);
   
   for(let i=0; i<substeps; i++) {
+    // 1. Bed Boundary Check
+    // Box origin is at center. Half widths for boundary.
+    const onBedX = Math.abs(box3State.x) < W1/2;
+    // Box 1 starts at Y=0 relative to its own center, but here box3State.y is relative to CG.
+    // Box 1 center in vehicle frame (relative to CG):
+    const box1CenterY = (-L1/2) - massProps.CG.y; 
+    // Wait, let's verify c1.y.
+    // c1.y = -L1/2.
+    // box1CenterY_rel = c1.y - CG.y.
+    const b1cy = (-L1/2) - massProps.CG.y;
+    // So bed extends from b1cy - L1/2 to b1cy + L1/2.
+    const minY = b1cy - L1/2;
+    const maxY = b1cy + L1/2;
+    const onBedY = box3State.y > minY && box3State.y < maxY;
+    
+    const isOverBed = onBedX && onBedY;
+    
     const boxBottom = box3State.z - H3/2;
     const pen = bedLocalZ - boxBottom;
     
     let Fz = 0, Fx = 0, Fy = 0;
     
-    if(pen > 0) {
+    // Apply bed support ONLY if over bed
+    if(pen > 0 && isOverBed) {
       const F_spring = k * pen;
-      
-      // Determine damping based on direction
-      // box3State.dz is relative velocity. 
-      // dz < 0 means moving down (compressing).
       const c = (box3State.dz < 0) ? c_comp : c_reb;
-      
       const F_damp = c * (-box3State.dz);
       Fz = Math.max(0, F_spring + F_damp);
       
@@ -574,6 +558,47 @@ function stepBox3(dt, vehAccel) {
       }
     }
     
+    // GROUND CHECK (World Frame Approximate)
+    // If it fell off, check if it hit the floor (Z_world < 0 + H3/2)
+    // World Z approx = state.z + box3State.z (since box z is relative)
+    // Actually, box3State.z includes vehicle Z? No, it's relative to CG.
+    // Z_world = state.z + box3State.z. (Rotation ignored for simple height check)
+    // Ground is at 0. But wheels sit on ground? R_wheel is axle height.
+    // Floor mesh is at y = -dist (scrolling). Z=0 is the floor plane.
+    const worldZ = state.z + box3State.z;
+    if (worldZ < H3/2) {
+       // Hit ground
+       const penGround = (H3/2) - worldZ;
+       // Apply simple ground restoring force
+       const k_g = k; // Same stiffness
+       const F_g = k_g * penGround;
+       // Add to Fz (rotated back? assume flat ground contact aligns with Z)
+       // This is a simplification. Ideally transform forces.
+       // For "falling off", just adding to Fz works to stop infinite fall.
+       Fz += F_g; 
+       
+       // Ground friction
+       const mu_g = 0.8;
+       const maxF_g = mu_g * F_g;
+       const vx = box3State.dx; 
+       const vy = box3State.dy; // Note: this is relative velocity to car.
+       // Box vel relative to ground = V_car + V_rel.
+       // We need to damp ABSOLUTE velocity.
+       const v_car = getVal('veh_v');
+       const abs_vy = vy + v_car;
+       const abs_vx = vx;
+       const abs_v = Math.sqrt(abs_vx*abs_vx + abs_vy*abs_vy);
+       
+       if(abs_v > 0.1) {
+          // Friction opposes absolute motion
+          // Force in absolute frame:
+          const Fx_g_abs = -maxF_g * (abs_vx / abs_v);
+          const Fy_g_abs = -maxF_g * (abs_vy / abs_v);
+          Fx += Fx_g_abs;
+          Fy += Fy_g_abs;
+       }
+    }
+
     const F_inertial_z = -m3 * vehAccel.ddz; 
     const F_total_z = Fz + (-m3*g) + F_inertial_z;
     const F_total_x = Fx; 
