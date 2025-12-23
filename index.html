@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Vehicle Dynamics - Final Physics & Imports</title>
+<title>Vehicle Dynamics - Final Fix</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"></script>
+
 <style>
   body { margin:0; font-family:sans-serif; background:#eaeaea; overflow: hidden; }
   #container { display:flex; height:100vh; width: 100vw; flex-direction: column; }
@@ -28,7 +30,17 @@
   #featureList div { background: #fff; padding: 4px; border: 1px solid #ddd; margin-top: 4px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
   #featureList button { width: auto; margin: 0; padding: 2px 6px; font-size: 10px; height: auto; background: #eee; border:1px solid #ccc; }
 </style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 </head>
+
 <body>
 <div id="container">
   <div id="top-section">
@@ -124,9 +136,9 @@
 </div>
 
 <script type="module">
-// DIRECT IMPORTS - No Map Required
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+// 3. Use 'three' directly. The Import Map above handles finding the URL.
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 let scene, camera, renderer, controls;
 let vehicleGroup, groundGroup, looseBox3Mesh;
@@ -483,7 +495,7 @@ function getRoadZ(x, y) {
   return z;
 }
 
-// --- SUB-STEPPED BOX PHYSICS (FIXED GRAVITY & GROUND) ---
+// --- SUB-STEPPED BOX PHYSICS ---
 function stepBox3(dt, vehAccel) {
   const substeps = 10;
   const subDt = dt / substeps;
@@ -506,7 +518,6 @@ function stepBox3(dt, vehAccel) {
   const c_comp = 2 * zeta_comp * Math.sqrt(k * m3);
   const c_reb = 2 * zeta_reb * Math.sqrt(k * m3);
   
-  // Gravity Force in Local Frame (Rotated)
   const sinP = Math.sin(state.phi), cosP = Math.cos(state.phi);
   const sinT = Math.sin(state.theta), cosT = Math.cos(state.theta);
   
@@ -520,6 +531,7 @@ function stepBox3(dt, vehAccel) {
     const minY = b1cy - L1/2;
     const maxY = b1cy + L1/2;
     const onBedY = box3State.y > minY && box3State.y < maxY;
+    
     const isOverBed = onBedX && onBedY;
     
     const boxBottom = box3State.z - H3/2;
@@ -549,7 +561,7 @@ function stepBox3(dt, vehAccel) {
       }
     }
     
-    // GROUND CHECK (Precise World Coords)
+    // GROUND CHECK
     const lz = box3State.z - H3/2;
     const rotZ = -sinT*box3State.x + sinP*cosT*box3State.y + cosP*cosT*lz;
     const worldBottomZ = state.z + rotZ;
@@ -564,9 +576,9 @@ function stepBox3(dt, vehAccel) {
        Fy += F_g_mag * (sinP * cosT);
        Fz += F_g_mag * (cosP * cosT);
        
-       // Ground Friction
        Fx -= box3State.dx * 10.0;
        Fy -= box3State.dy * 10.0;
+       
        const v_car = getVal('veh_v');
        const dragCoeff = 20.0;
        Fy -= (box3State.dy + v_car) * dragCoeff; 
