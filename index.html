@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Vehicle Dynamics - Stable Cargo</title>
+<title>Vehicle Dynamics - Adaptive Cargo Physics</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -101,6 +101,12 @@
       </div>
       <button id="updateBtn">Reset / Center Vehicle</button>
       
+      <h3>Analysis Point</h3>
+      <div class="grid2">
+        <label>User X <span class="units">in</span><input id="user_X" type="number" value="0"></label>
+        <label>User Y <span class="units">in</span><input id="user_Y" type="number" value="60"></label>
+      </div>
+
       <h3>Road Feature Settings</h3>
       <div class="grid2">
         <label style="grid-column: 1 / span 2;">Type
@@ -147,7 +153,7 @@ const state = {
   dz: 0, dphi: 0, dtheta: 0,
   zw: { FL:30, FR:30, RL:30, RR:30 },
   dzw: { FL:0, FR:0, RL:0, RR:0 },
-  ddz: 0 // Storage for graphing
+  ddz: 0, ddphi: 0, ddtheta: 0 // Storage for graphing
 };
 
 const box3State = {
@@ -221,6 +227,11 @@ function initChart() {
       labels: [],
       datasets: [
         { label: 'CG', borderColor: 'black', ...commonOptions, borderWidth: 3 },
+        { label: 'FL', borderColor: 'red', ...commonOptions },
+        { label: 'FR', borderColor: 'blue', ...commonOptions },
+        { label: 'RL', borderColor: 'orange', ...commonOptions },
+        { label: 'RR', borderColor: 'green', ...commonOptions },
+        { label: 'User', borderColor: 'purple', ...commonOptions, borderDash: [5, 5], borderWidth: 2 },
         { label: 'Box3 (Abs)', borderColor: 'magenta', ...commonOptions, borderDash: [3, 3], borderWidth: 2 }
       ]
     },
@@ -248,14 +259,69 @@ function updateChartLogic(t) {
   const g = getVal('veh_g'); 
   const toG = (val) => val / g;
   
+  // 1. CG Acceleration
   const aCG = toG(state.ddz);
+  
+  // 2. Chassis Corners Acceleration
+  // Accel(P) = ddz - ddphi*x + ddtheta*y (Small angle approximation)
+  // Need coordinates relative to CG.
+  const L = getVal('box1_L');
+  const W = getVal('box1_W');
+  
+  // Box 1 center relative to CG
+  // Note: Vehicle is built such that mesh position is (c1.x - CG.x, c1.y - CG.y).
+  // If Box 1 is at 0,0 local, then corners are at +/- W/2, +/- L/2 relative to Box1 center.
+  // We need to fetch the CG offsets calculated in buildVehicle.
+  // But those were local vars. Let's recalculate simply:
+  // We need the X/Y of the corners relative to the CG.
+  // Since we construct the car assuming symmetric width, CG.x is roughly 0 (unless offset cargo).
+  // Let's use the actual massProps.CG if available, or just re-derive.
+  // Actually, wheelOffsets are already relative to CG.
+  // FL Corner is essentially Wheel FL location (visually).
+  // Let's use the explicit corner coordinates of Box 1.
+  
+  // Box1 Position relative to CG:
+  // We know Box1 Center is at: 
+  // x = 0 - massProps.CG.x (Assuming Box1 starts at X=0)
+  // y = -L/2 - massProps.CG.y (Assuming Box1 starts at Y=-L/2... wait, check buildVehicle)
+  // In buildVehicle: c1 = { x:0, y: -L1/2... }
+  const c1x = 0 - massProps.CG.x;
+  const c1y = (-L/2) - massProps.CG.y;
+  
+  const getCornerAcc = (dx, dy) => {
+    // x, y relative to CG
+    const x = c1x + dx;
+    const y = c1y + dy;
+    return toG(state.ddz - state.ddphi * x + state.ddtheta * y);
+  };
+  
+  const aFL = getCornerAcc(-W/2, L/2);
+  const aFR = getCornerAcc(W/2, L/2);
+  const aRL = getCornerAcc(-W/2, -L/2);
+  const aRR = getCornerAcc(W/2, -L/2);
+  
+  // 3. User Point
+  const userX_global = getVal('user_X'); // Input is relative to origin? Or CG? 
+  // Let's assume input is relative to the "Vehicle Origin" (where X=0, Y=0 is front axle or geometric center before CG shift).
+  // Effectively: user_X - massProps.CG.x
+  const ux = userX_global - massProps.CG.x;
+  const uy = getVal('user_Y') - massProps.CG.y;
+  const aUser = toG(state.ddz - state.ddphi * ux + state.ddtheta * uy);
+  
+  // 4. Box 3 Absolute Accel
   const aBox3 = toG(box3State.az); 
   
   const lbl = t.toFixed(2);
   const chart = chartInstance;
   chart.data.labels.push(lbl);
+  
   chart.data.datasets[0].data.push(aCG);
-  chart.data.datasets[1].data.push(aBox3);
+  chart.data.datasets[1].data.push(aFL);
+  chart.data.datasets[2].data.push(aFR);
+  chart.data.datasets[3].data.push(aRL);
+  chart.data.datasets[4].data.push(aRR);
+  chart.data.datasets[5].data.push(aUser);
+  chart.data.datasets[6].data.push(aBox3);
   
   if(chart.data.labels.length > maxDataPoints) {
     chart.data.labels.shift();
@@ -360,12 +426,9 @@ function buildVehicle(isAutoUpdate = false) {
     state.dz = 0; state.dphi = 0; state.dtheta = 0;
     state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
     
-    // Position box on bed (local coordinates relative to CG)
-    // Bed is top of Box 1. Local Z = c1.z - CG.z + H1/2
     const bedHeight = (c1.z - CG.z) + H1/2;
     box3State.x = getVal('box3_X0');
     box3State.y = getVal('box3_Y0');
-    // Start slightly above bed to let it settle
     box3State.z = bedHeight + H3/2 + 2; 
     box3State.dx = 0; box3State.dy = 0; box3State.dz = 0;
   }
@@ -453,7 +516,7 @@ function getRoadZ(x, y) {
   return z;
 }
 
-// --- SUB-STEPPED BOX PHYSICS ---
+// --- SUB-STEPPED BOX PHYSICS (ADAPTIVE) ---
 function stepBox3(dt, vehAccel) {
   const substeps = 10;
   const subDt = dt / substeps;
@@ -464,25 +527,38 @@ function stepBox3(dt, vehAccel) {
   const H1 = getVal('box1_H');
   const R_wheel = getVal('wheel_D') / 2;
   
-  // Calculate Bed Height relative to CG (local Z)
   const bedLocalZ = (H1/2 + R_wheel) - massProps.CG.z + H1/2; 
   
+  // --- ADAPTIVE PARAMETER CALCULATION ---
+  // 1. Calculate stiffness k to give 0.5 inch deflection under 1G load
+  // k = Force / Deflection = (m3 * g) / 0.5
+  const targetSquish = 0.5; // inch
+  const k = (m3 * g) / targetSquish;
+  
+  // 2. Calculate damping coefficients for Asymmetric Damping
+  // c = 2 * zeta * sqrt(k * m)
+  const zeta_comp = 0.5; // Critical-ish for impact
+  const zeta_reb = 0.01; // Almost zero for bouncing
+  const c_comp = 2 * zeta_comp * Math.sqrt(k * m3);
+  const c_reb = 2 * zeta_reb * Math.sqrt(k * m3);
+  
   for(let i=0; i<substeps; i++) {
-    // 1. Check Contact
     const boxBottom = box3State.z - H3/2;
     const pen = bedLocalZ - boxBottom;
     
     let Fz = 0, Fx = 0, Fy = 0;
     
-    // 2. Normal Force (Spring + Damp)
     if(pen > 0) {
-      const k = 5000;
-      const c = 50;
       const F_spring = k * pen;
+      
+      // Determine damping based on direction
+      // box3State.dz is relative velocity. 
+      // dz < 0 means moving down (compressing).
+      const c = (box3State.dz < 0) ? c_comp : c_reb;
+      
       const F_damp = c * (-box3State.dz);
       Fz = Math.max(0, F_spring + F_damp);
       
-      // 3. Friction
       const mu = getVal('box3_Fric');
       const maxFriction = mu * Fz;
       const vx = box3State.dx; 
@@ -498,19 +574,11 @@ function stepBox3(dt, vehAccel) {
       }
     }
     
-    // 4. Inertial Forces (Fictitious)
-    // FIX: Remove extra 'g' term. F_inertial = -m * a_frame.
     const F_inertial_z = -m3 * vehAccel.ddz; 
-    
-    // 5. Total Forces
-    // Fz_total = F_contact + F_gravity + F_inertial
-    // Gravity is -m3*g in the inertial frame.
-    // In local frame (assuming small angles), it's approx -m3*g in Z.
     const F_total_z = Fz + (-m3*g) + F_inertial_z;
     const F_total_x = Fx; 
     const F_total_y = Fy;
     
-    // 6. Integrate (Euler)
     const az = F_total_z / m3;
     const ax = F_total_x / m3;
     const ay = F_total_y / m3;
@@ -523,7 +591,6 @@ function stepBox3(dt, vehAccel) {
     box3State.y += box3State.dy * subDt;
     box3State.z += box3State.dz * subDt;
     
-    // Store for graph (last substep wins)
     box3State.az = az + vehAccel.ddz;
   }
 }
@@ -591,7 +658,9 @@ function stepRK4(dt) {
   const vehAccel = { ddz: k1[3], ddphi: k1[4], ddtheta: k1[5] };
   stepBox3(dt, vehAccel);
   
-  state.ddz = vehAccel.ddz; // Store for chart
+  state.ddz = vehAccel.ddz; 
+  state.ddphi = vehAccel.ddphi;
+  state.ddtheta = vehAccel.ddtheta;
   
   simTime += dt;
 }
