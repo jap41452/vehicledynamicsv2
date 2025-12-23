@@ -2,141 +2,180 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Vehicle Dynamics - Fixed</title>
+<title>Vehicle Dynamics - Fixed Imports & Physics</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   body { margin:0; font-family:sans-serif; background:#eaeaea; overflow: hidden; }
-  #container { display:flex; height:100vh; width: 100vw; }
-  #ui { width:340px; padding:10px; background:#f5f5f5; border-right:1px solid #ccc; overflow-y:auto; flex-shrink: 0; box-shadow: 2px 0 5px rgba(0,0,0,0.1); z-index: 10; }
+  #container { display:flex; height:100vh; width: 100vw; flex-direction: column; }
+  #top-section { display: flex; flex: 1; min-height: 0; }
+  #ui { width:340px; padding:10px; background:#f5f5f5; border-right:1px solid #ccc; overflow-y:auto; flex-shrink: 0; box-shadow: 2px 0 5px rgba(0,0,0,0.1); z-index: 10; height: 100%; box-sizing: border-box;}
   #viewer { flex-grow:1; position:relative; background: #ccc; }
-  
+  #chart-container { height: 200px; background: #fff; border-top: 1px solid #999; padding: 10px; flex-shrink: 0; z-index: 20; display: flex; }
   h3 { margin:15px 0 5px 0; font-size:12px; border-bottom:1px solid #aaa; padding-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; color: #444; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; }
   label { font-size:11px; display:block; color: #666; }
-  input[type="number"] { width:100%; padding:4px; font-size:11px; border:1px solid #ccc; border-radius: 3px; }
+  input[type="number"], select { width:100%; padding:4px; font-size:11px; border:1px solid #ccc; border-radius: 3px; box-sizing: border-box;}
   .units { float:right; font-size:9px; color:#999; }
-  
-  button { width:100%; margin-top:10px; padding:8px; font-size:11px; cursor:pointer; background: #e0e0e0; border: 1px solid #bbb; border-radius: 3px; transition: background 0.2s; }
+  button { width:100%; margin-top:5px; padding:8px; font-size:11px; cursor:pointer; background: #e0e0e0; border: 1px solid #bbb; border-radius: 3px; transition: background 0.2s; }
   button:hover { background: #d0d0d0; }
-
+  #solveBtn { background: #d4edda; border-color: #c3e6cb; color: #155724; font-weight: bold; }
+  #solveBtn:hover { background: #c3e6cb; }
+  #stopBtn { background: #f8d7da; border-color: #f5c6cb; color: #721c24; font-weight: bold; }
+  #stopBtn:hover { background: #f5c6cb; }
+  #addFeatureBtn { background: #d0e8ff; border-color: #b8daff; color: #004085; font-weight: bold; margin-top: 10px;}
+  #addFeatureBtn:hover { background: #b8daff; }
   #featureList div { background: #fff; padding: 4px; border: 1px solid #ddd; margin-top: 4px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
-  #featureList button { width: auto; margin: 0; padding: 2px 6px; font-size: 10px; height: auto; }
+  #featureList button { width: auto; margin: 0; padding: 2px 6px; font-size: 10px; height: auto; background: #eee; border:1px solid #ccc; }
 </style>
 </head>
-
 <body>
 <div id="container">
+  <div id="top-section">
+    <div id="ui">
+      <div class="auto-update-group">
+        <h3>Box 1 (Chassis)</h3>
+        <div class="grid2">
+          <label>Length (Y) <span class="units">in</span><input id="box1_L" type="number" value="120"></label>
+          <label>Width (X)  <span class="units">in</span><input id="box1_W" type="number" value="72"></label>
+          <label>Height (Z) <span class="units">in</span><input id="box1_H" type="number" value="24"></label>
+          <label>Weight     <span class="units">lb</span><input id="box1_Wt" type="number" value="2500"></label>
+        </div>
+        <h3>Box 2 (Cab/Cargo)</h3>
+        <div class="grid2">
+          <label>Length (Y) <span class="units">in</span><input id="box2_L" type="number" value="60"></label>
+          <label>Width (X)  <span class="units">in</span><input id="box2_W" type="number" value="60"></label>
+          <label>Height (Z) <span class="units">in</span><input id="box2_H" type="number" value="20"></label>
+          <label>Weight     <span class="units">lb</span><input id="box2_Wt" type="number" value="800"></label>
+          <label>Front Offset (Y) <span class="units">in</span><input id="box2_dY" type="number" value="0"></label>
+        </div>
+        <h3>Box 3 (Loose Cargo)</h3>
+        <div class="grid2">
+          <label>Length (Y) <span class="units">in</span><input id="box3_L" type="number" value="20"></label>
+          <label>Width (X)  <span class="units">in</span><input id="box3_W" type="number" value="20"></label>
+          <label>Height (Z) <span class="units">in</span><input id="box3_H" type="number" value="20"></label>
+          <label>Weight     <span class="units">lb</span><input id="box3_Wt" type="number" value="100"></label>
+          <label>Initial X <span class="units">in</span><input id="box3_X0" type="number" value="0"></label>
+          <label>Initial Y <span class="units">in</span><input id="box3_Y0" type="number" value="-50"></label>
+          <label>Friction Coeff<span class="units">µ</span><input id="box3_Fric" type="number" value="0.3" step="0.1"></label>
+        </div>
+        <h3>Wheels</h3>
+        <div class="grid2">
+          <label>Diameter <span class="units">in</span><input id="wheel_D" type="number" value="32"></label>
+          <label>Weight   <span class="units">lb</span><input id="wheel_Wt" type="number" value="120"></label>
+          <label>Front Y  <span class="units">in</span><input id="wheel_Yf" type="number" value="-20"></label>
+          <label>Rear Spacing <span class="units">in</span><input id="wheel_dYr" type="number" value="80"></label>
+        </div>
+      </div>
+      <h3>Suspension</h3>
+      <div class="grid2">
+        <label>Front K <span class="units">lb/in</span><input id="k_sf" type="number" value="300"></label>
+        <label>Front C <span class="units">lb·s/in</span><input id="c_sf" type="number" value="25"></label>
+        <label>Rear K <span class="units">lb/in</span><input id="k_sr" type="number" value="350"></label>
+        <label>Rear C <span class="units">lb·s/in</span><input id="c_sr" type="number" value="30"></label>
+      </div>
+      <h3>Tires</h3>
+      <div class="grid2">
+        <label>Front K <span class="units">lb/in</span><input id="k_tf" type="number" value="1200"></label>
+        <label>Rear K <span class="units">lb/in</span><input id="k_tr" type="number" value="1400"></label>
+      </div>
 
-<div id="ui">
-  <h3>Box 1 (Chassis)</h3>
-  <div class="grid2">
-    <label>Length (Y) <span class="units">in</span><input id="box1_L" type="number" value="120"></label>
-    <label>Width (X)  <span class="units">in</span><input id="box1_W" type="number" value="72"></label>
-    <label>Height (Z) <span class="units">in</span><input id="box1_H" type="number" value="24"></label>
-    <label>Weight     <span class="units">lb</span><input id="box1_Wt" type="number" value="2500"></label>
+      <h3>Simulation</h3>
+      <div class="grid2">
+        <label>Speed <span class="units">in/s</span><input id="veh_v" type="number" value="300"></label>
+        <label>Gravity <span class="units">in/s²</span><input id="veh_g" type="number" value="386.1"></label>
+        <label>Time Scale <span class="units">x</span><input id="time_scale" type="number" value="1.0" step="0.1" min="0.1" max="10"></label>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <button id="solveBtn">► Solve</button>
+        <button id="stopBtn">■ Stop</button>
+      </div>
+      <button id="updateBtn">Reset / Center Vehicle</button>
+      
+      <h3>Analysis Point</h3>
+      <div class="grid2">
+        <label>User X <span class="units">in</span><input id="user_X" type="number" value="0"></label>
+        <label>User Y <span class="units">in</span><input id="user_Y" type="number" value="60"></label>
+      </div>
+
+      <h3>Road Feature Settings</h3>
+      <div class="grid2">
+        <label style="grid-column: 1 / span 2;">Type
+          <select id="feat_Type">
+            <option value="full">Full Speed Bump</option>
+            <option value="half_L">1/2 Bump (Left)</option>
+            <option value="half_R">1/2 Bump (Right)</option>
+            <option value="rough">Rough Dirt Road</option>
+          </select>
+        </label>
+        <label>Height/Roughness <span class="units">in</span><input id="feat_H" type="number" value="3"></label>
+        <label>Length Y <span class="units">in</span><input id="feat_W" type="number" value="200"></label>
+        <label>Location Y <span class="units">in</span><input id="feat_Y" type="number" value="100"></label>
+      </div>
+      <button id="addFeatureBtn">+ Add Feature</button>
+      <div id="featureList"></div>
+    </div>
+    <div id="viewer"></div>
   </div>
-
-  <h3>Box 2 (Cab/Cargo)</h3>
-  <div class="grid2">
-    <label>Length (Y) <span class="units">in</span><input id="box2_L" type="number" value="60"></label>
-    <label>Width (X)  <span class="units">in</span><input id="box2_W" type="number" value="60"></label>
-    <label>Height (Z) <span class="units">in</span><input id="box2_H" type="number" value="20"></label>
-    <label>Weight     <span class="units">lb</span><input id="box2_Wt" type="number" value="800"></label>
-    <label>Front Offset (Y) <span class="units">in</span><input id="box2_dY" type="number" value="0"></label>
+  <div id="chart-container">
+    <canvas id="accelChart"></canvas>
   </div>
-
-  <h3>Wheels</h3>
-  <div class="grid2">
-    <label>Diameter <span class="units">in</span><input id="wheel_D" type="number" value="32"></label>
-    <label>Weight   <span class="units">lb</span><input id="wheel_Wt" type="number" value="120"></label>
-    <label>Front Y  <span class="units">in</span><input id="wheel_Yf" type="number" value="-20"></label>
-    <label>Rear Spacing <span class="units">in</span><input id="wheel_dYr" type="number" value="80"></label>
-  </div>
-
-  <h3>Suspension</h3>
-  <div class="grid2">
-    <label>Front K <span class="units">lb/in</span><input id="k_sf" type="number" value="300"></label>
-    <label>Front C <span class="units">lb·s/in</span><input id="c_sf" type="number" value="25"></label>
-    <label>Rear K <span class="units">lb/in</span><input id="k_sr" type="number" value="350"></label>
-    <label>Rear C <span class="units">lb·s/in</span><input id="c_sr" type="number" value="30"></label>
-  </div>
-
-  <h3>Tires</h3>
-  <div class="grid2">
-    <label>Front K <span class="units">lb/in</span><input id="k_tf" type="number" value="1200"></label>
-    <label>Rear K <span class="units">lb/in</span><input id="k_tr" type="number" value="1400"></label>
-  </div>
-
-  <h3>Simulation</h3>
-  <div class="grid2">
-    <label>Speed <span class="units">in/s</span><input id="veh_v" type="number" value="300"></label>
-    <label>Gravity <span class="units">in/s²</span><input id="veh_g" type="number" value="386.1"></label>
-  </div>
-  
-  <button id="updateBtn">Update Vehicle</button>
-
-  <h3>Road Features</h3>
-  <div class="grid2">
-    <button id="addBumpBtn">Add Speed Bump</button>
-    <button id="addHalfBumpBtn">Add 1/2 Bump</button>
-  </div>
-  <div id="featureList"></div>
-</div>
-
-<div id="viewer"></div>
-
 </div>
 
 <script type="module">
-// FIX: Import directly from the full URL to avoid import map issues
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 
-// --- GLOBALS ---
 let scene, camera, renderer, controls;
-let vehicleGroup, groundGroup;
+let vehicleGroup, groundGroup, looseBox3Mesh;
 let roadFeatures = [];
 let nextFeatureId = 1;
 let simTime = 0;
 let massProps = null;
 let wheelOffsets = null;
-
-// Time Step
+let isRunning = false;
+let chartInstance = null;
+const maxDataPoints = 200; 
+let chartUpdateCounter = 0;
 const dt = 1/120; 
 
-// Physics State [z, phi, theta, dz, dphi, dtheta, ...zw, ...dzw]
 const state = {
   z: 40, phi: 0, theta: 0,
   dz: 0, dphi: 0, dtheta: 0,
   zw: { FL:30, FR:30, RL:30, RR:30 },
-  dzw: { FL:0, FR:0, RL:0, RR:0 }
+  dzw: { FL:0, FR:0, RL:0, RR:0 },
+  ddz: 0 // Storage for graphing
 };
 
-// --- INITIALIZATION ---
+const box3State = {
+  x: 0, y: 0, z: 0,
+  dx: 0, dy: 0, dz: 0,
+  az: 0,
+  isOffBed: false
+};
+
 init();
+initChart();
 buildVehicle();
+setupAutoUpdate();
 animate();
 
 function init() {
   const container = document.getElementById('viewer');
-  
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0xd0d0d0);
   scene.fog = new THREE.Fog(0xd0d0d0, 500, 4000);
   THREE.Object3D.DEFAULT_UP.set(0,0,1);
-
   camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 10000);
-  camera.position.set(300, -600, 400);
-
+  camera.position.set(400, -800, 500);
   renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
   container.appendChild(renderer.domElement);
-
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   
-  // Lights
   scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(100, -300, 500);
@@ -146,129 +185,221 @@ function init() {
   dirLight.shadow.camera.top = 500; dirLight.shadow.camera.bottom = -500;
   dirLight.shadow.camera.left = -500; dirLight.shadow.camera.right = 500;
   scene.add(dirLight);
-
-  // Groups
+  
   groundGroup = new THREE.Group();
   scene.add(groundGroup);
   vehicleGroup = new THREE.Group();
-  scene.add(vehicleGroup); // This group will move with physics CG
-
-  // Floor
+  scene.add(vehicleGroup);
+  
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(10000, 10000), 
     new THREE.MeshStandardMaterial({ color: 0xbbbbbb, depthWrite: false })
   );
   floor.receiveShadow = true;
   groundGroup.add(floor);
-
-  // Grid
+  
   const grid = new THREE.GridHelper(10000, 100, 0x999999, 0xcccccc);
   grid.rotation.x = Math.PI/2;
   groundGroup.add(grid);
-
+  
   window.addEventListener('resize', () => {
-    camera.aspect = container.clientWidth / container.clientHeight;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setSize(w, h);
   });
 }
 
-function getVal(id) { return parseFloat(document.getElementById(id).value) || 0; }
+function initChart() {
+  const ctx = document.getElementById('accelChart').getContext('2d');
+  const commonOptions = { pointRadius: 0, borderWidth: 1.5, tension: 0.2 };
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'CG', borderColor: 'black', ...commonOptions, borderWidth: 3 },
+        { label: 'FL', borderColor: 'red', ...commonOptions },
+        { label: 'FR', borderColor: 'blue', ...commonOptions },
+        { label: 'RL', borderColor: 'orange', ...commonOptions },
+        { label: 'RR', borderColor: 'green', ...commonOptions },
+        { label: 'User', borderColor: 'purple', ...commonOptions, borderDash: [5, 5], borderWidth: 2 },
+        { label: 'Box3 (Abs)', borderColor: 'magenta', ...commonOptions, borderDash: [3, 3], borderWidth: 2 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        title: { display: true, text: 'Vertical Acceleration (G)' },
+        legend: { position: 'right', labels: { boxWidth: 10 } }
+      },
+      scales: {
+        x: { display: false },
+        y: { title: { display: true, text: 'G-Force' }, suggestedMin: -2, suggestedMax: 2 }
+      }
+    }
+  });
+}
 
-// --- VEHICLE BUILDER ---
-function buildVehicle() {
+function updateChartLogic(t) {
+  chartUpdateCounter++;
+  if(chartUpdateCounter < 5) return;
+  chartUpdateCounter = 0;
+  
+  const g = getVal('veh_g'); 
+  const toG = (val) => val / g;
+  
+  const aCG = toG(state.ddz);
+  const aBox3 = toG(box3State.az);
+  
+  const L = getVal('box1_L');
+  const W = getVal('box1_W');
+  const c1y = (-L/2) - massProps.CG.y; 
+  const c1x = -massProps.CG.x;
+
+  const getCornerAcc = (dx, dy) => {
+    const x = c1x + dx;
+    const y = c1y + dy;
+    return toG(state.ddz - state.ddphi * x + state.ddtheta * y);
+  };
+  
+  const aFL = getCornerAcc(-W/2, L/2);
+  const aFR = getCornerAcc(W/2, L/2);
+  const aRL = getCornerAcc(-W/2, -L/2);
+  const aRR = getCornerAcc(W/2, -L/2);
+  
+  const ux = getVal('user_X') - massProps.CG.x;
+  const uy = getVal('user_Y') - massProps.CG.y;
+  const aUser = toG(state.ddz - state.ddphi * ux + state.ddtheta * uy);
+  
+  const lbl = t.toFixed(2);
+  const chart = chartInstance;
+  chart.data.labels.push(lbl);
+  
+  chart.data.datasets[0].data.push(aCG);
+  chart.data.datasets[1].data.push(aFL);
+  chart.data.datasets[2].data.push(aFR);
+  chart.data.datasets[3].data.push(aRL);
+  chart.data.datasets[4].data.push(aRR);
+  chart.data.datasets[5].data.push(aUser);
+  chart.data.datasets[6].data.push(aBox3);
+  
+  if(chart.data.labels.length > maxDataPoints) {
+    chart.data.labels.shift();
+    chart.data.datasets.forEach(ds => ds.data.shift());
+  }
+  chart.options.plugins.title.text = `Vertical Acceleration (G) - Time: ${t.toFixed(2)}s`;
+  chart.update();
+}
+
+function packState(s) {
+  return [
+    s.z, s.phi, s.theta,
+    s.dz, s.dphi, s.dtheta,
+    s.zw.FL, s.zw.FR, s.zw.RL, s.zw.RR,
+    s.dzw.FL, s.dzw.FR, s.dzw.RL, s.dzw.RR
+  ];
+}
+
+function getVal(id) { return parseFloat(document.getElementById(id).value) || 0; }
+function setVal(id, val) { document.getElementById(id).value = val; }
+
+function setupAutoUpdate() {
+  const inputs = document.querySelectorAll('.auto-update-group input');
+  inputs.forEach(input => {
+    input.addEventListener('input', () => { buildVehicle(true); });
+  });
+}
+
+document.getElementById('solveBtn').onclick = () => { isRunning = true; };
+document.getElementById('stopBtn').onclick = () => { isRunning = false; };
+document.getElementById('updateBtn').onclick = () => buildVehicle(false);
+
+function buildVehicle(isAutoUpdate = false) {
+  if(!isAutoUpdate) {
+    isRunning = false;
+    simTime = 0;
+    if(chartInstance) {
+      chartInstance.data.labels = [];
+      chartInstance.data.datasets.forEach(ds => ds.data = []);
+      chartInstance.update();
+    }
+  }
   vehicleGroup.clear();
   
-  // 1. Gather Geometry Inputs
   const L1 = getVal('box1_L'), W1 = getVal('box1_W'), H1 = getVal('box1_H');
   const L2 = getVal('box2_L'), W2 = getVal('box2_W'), H2 = getVal('box2_H');
-  const dY = getVal('box2_dY'); // Box 2 Front Offset
+  const L3 = getVal('box3_L'), W3 = getVal('box3_W'), H3 = getVal('box3_H');
+  const dY = getVal('box2_dY'); 
   const R  = getVal('wheel_D') / 2;
-  
   const g = getVal('veh_g');
   const m1 = getVal('box1_Wt') / g;
   const m2 = getVal('box2_Wt') / g;
   const M = m1 + m2;
-
-  // 2. Calculate Center of Gravity (CG)
-  const c1 = { x:0, y: -L1/2,      z: H1/2 + R };
-  const c2 = { x:0, y: dY - L2/2,  z: H1 + H2/2 + R };
   
+  const c1 = { x:0, y: -L1/2, z: H1/2 + R };
+  const c2 = { x:0, y: dY - L2/2, z: H1 + H2/2 + R };
   const CG = {
     x: (m1*c1.x + m2*c2.x) / M,
     y: (m1*c1.y + m2*c2.y) / M,
     z: (m1*c1.z + m2*c2.z) / M
   };
-
-  // 3. Calculate Inertia (Parallel Axis Theorem)
-  const Ixx1 = (m1/12)*(L1*L1 + H1*H1);
-  const Ixx2 = (m2/12)*(L2*L2 + H2*H2);
-  const dy1 = c1.y-CG.y, dz1 = c1.z-CG.z;
-  const dy2 = c2.y-CG.y, dz2 = c2.z-CG.z;
-  const Ixx = (Ixx1 + m1*(dy1*dy1 + dz1*dz1)) + (Ixx2 + m2*(dy2*dy2 + dz2*dz2));
-
-  const Iyy1 = (m1/12)*(W1*W1 + H1*H1);
-  const Iyy2 = (m2/12)*(W2*W2 + H2*H2);
-  const dx1 = c1.x-CG.x; // 0
-  const dx2 = c2.x-CG.x; // 0
-  const Iyy = (Iyy1 + m1*(dx1*dx1 + dz1*dz1)) + (Iyy2 + m2*(dx2*dx2 + dz2*dz2));
-
+  
+  const Ixx = (m1/12)*(L1*L1 + H1*H1) + m1*((c1.y-CG.y)**2 + (c1.z-CG.z)**2) + 
+              (m2/12)*(L2*L2 + H2*H2) + m2*((c2.y-CG.y)**2 + (c2.z-CG.z)**2);
+  const Iyy = (m1/12)*(W1*W1 + H1*H1) + m1*((c1.x-CG.x)**2 + (c1.z-CG.z)**2) + 
+              (m2/12)*(W2*W2 + H2*H2) + m2*((c2.x-CG.x)**2 + (c2.z-CG.z)**2);
   massProps = { M, CG, Ixx, Iyy };
-
-  // 4. Build Visuals (Centered around CG)
-  // Box 1
+  
   const b1 = new THREE.Mesh(new THREE.BoxGeometry(W1, L1, H1), new THREE.MeshStandardMaterial({color: 0x5577aa}));
   b1.position.set(c1.x - CG.x, c1.y - CG.y, c1.z - CG.z);
   b1.castShadow = true;
   vehicleGroup.add(b1);
-
-  // Box 2
+  
   const b2 = new THREE.Mesh(new THREE.BoxGeometry(W2, L2, H2), new THREE.MeshStandardMaterial({color: 0x88aabb}));
   b2.position.set(c2.x - CG.x, c2.y - CG.y, c2.z - CG.z);
   b2.castShadow = true;
   vehicleGroup.add(b2);
-
-  // Wheels
-  const wheelGeo = new THREE.CylinderGeometry(R, R, W1*0.2, 24); // Width proportional to car
+  
+  looseBox3Mesh = new THREE.Mesh(new THREE.BoxGeometry(W3, L3, H3), new THREE.MeshStandardMaterial({color: 0xff4444}));
+  looseBox3Mesh.castShadow = true;
+  vehicleGroup.add(looseBox3Mesh); 
+  
+  const wheelGeo = new THREE.CylinderGeometry(R, R, W1*0.2, 24);
   wheelGeo.rotateZ(Math.PI/2);
   const wheelMat = new THREE.MeshStandardMaterial({color: 0x222222});
-
   const yF = getVal('wheel_Yf');
   const yR = yF - getVal('wheel_dYr');
-  const xW = W1/2; // Approx track width
-
-  const wheels = [
-    {n:'FL', x: -xW, y: yF}, {n:'FR', x: xW, y: yF},
-    {n:'RL', x: -xW, y: yR}, {n:'RR', x: xW, y: yR}
-  ];
-
-  wheelOffsets = wheels.map(w => ({
-    name: w.n,
-    x: w.x - CG.x,
-    y: w.y - CG.y
-  }));
-
+  const xW = W1/2; 
+  const wheels = [ {n:'FL', x: -xW, y: yF}, {n:'FR', x: xW, y: yF}, {n:'RL', x: -xW, y: yR}, {n:'RR', x: xW, y: yR} ];
+  wheelOffsets = wheels.map(w => ({ name: w.n, x: w.x - CG.x, y: w.y - CG.y }));
   wheels.forEach(w => {
     const mesh = new THREE.Mesh(wheelGeo, wheelMat);
     mesh.name = "W_" + w.n;
-    // Initial local pos relative to CG
     mesh.position.set(w.x - CG.x, w.y - CG.y, R - CG.z); 
     mesh.castShadow = true;
     vehicleGroup.add(mesh);
   });
-
-  // Reset Physics State
-  state.z = CG.z + 20; // Drop from height
-  state.phi = 0; state.theta = 0;
-  state.dz = 0; state.dphi = 0; state.dtheta = 0;
-  state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
-  simTime = 0;
+  
+  if(!isAutoUpdate || simTime === 0) {
+    state.z = CG.z + 10; 
+    state.phi = 0; state.theta = 0;
+    state.dz = 0; state.dphi = 0; state.dtheta = 0;
+    state.zw.FL = state.zw.FR = state.zw.RL = state.zw.RR = CG.z;
+    
+    // Init Box 3 slightly above bed
+    const bedHeight = (c1.z - CG.z) + H1/2;
+    box3State.x = getVal('box3_X0');
+    box3State.y = getVal('box3_Y0');
+    box3State.z = bedHeight + H3/2 + 2; 
+    box3State.dx = 0; box3State.dy = 0; box3State.dz = 0;
+    box3State.isOffBed = false;
+  }
 }
 
-document.getElementById('updateBtn').onclick = buildVehicle;
-
-// --- ROAD FEATURES ---
-// Helper: Add visual mesh for bump
 function addFeatureMesh(geom, color, x, y) {
   const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({color}));
   mesh.position.set(x, y, 0);
@@ -277,157 +408,248 @@ function addFeatureMesh(geom, color, x, y) {
   return mesh;
 }
 
-document.getElementById('addBumpBtn').onclick = () => {
-  const h = 3, w = 24, y = 100 + roadFeatures.length*100; // Auto-space
-  addSpeedBump(h, w, y);
-};
-
-document.getElementById('addHalfBumpBtn').onclick = () => {
-  const h = 3, w = 24, y = 100 + roadFeatures.length*100;
-  addHalfSpeedBump(h, w, y, 'left');
+document.getElementById('addFeatureBtn').onclick = () => {
+  const type = document.getElementById('feat_Type').value;
+  const h = getVal('feat_H');
+  const w = getVal('feat_W'); 
+  const y = getVal('feat_Y');
+  if (type === 'full') addSpeedBump(h, w, y);
+  else if (type === 'half_L') addHalfSpeedBump(h, w, y, 'left');
+  else if (type === 'half_R') addHalfSpeedBump(h, w, y, 'right');
+  else if (type === 'rough') addRoughPatch(h, w, y);
+  setVal('feat_Y', y + (type==='rough' ? w + 50 : 100));
 };
 
 function addSpeedBump(h, w, y) {
-  const W = getVal('box1_W') * 4; 
-  const r = w/2;
-  const shape = new THREE.Shape();
-  shape.moveTo(-r,0); shape.absarc(0,0,r,0,Math.PI,false); shape.lineTo(r,0);
-  const geom = new THREE.ExtrudeGeometry(shape, {depth:W, bevelEnabled:false});
-  geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
+  const W = getVal('box1_W') * 3; 
+  const geom = new THREE.ExtrudeGeometry(new THREE.Shape().moveTo(-w/2,0).absarc(0,0,w/2,0,Math.PI,false).lineTo(w/2,0), {depth:W, bevelEnabled:false});
+  geom.translate(0, 0, -W/2); geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
   const mesh = addFeatureMesh(geom, 0x888888, 0, y);
   roadFeatures.push({id: nextFeatureId++, type:'bump', params:{h,w,y}, mesh});
   refreshFeatures();
 }
 
 function addHalfSpeedBump(h, w, y, side) {
-  const W = getVal('box1_W') * 1.5;
-  const r = w/2;
-  const shape = new THREE.Shape();
-  shape.moveTo(-r,0); shape.absarc(0,0,r,0,Math.PI,false); shape.lineTo(r,0);
-  const geom = new THREE.ExtrudeGeometry(shape, {depth:W, bevelEnabled:false});
-  geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
-  const xOff = (side==='left' ? -1 : 1) * (W/2 + 10);
+  const carWidth = getVal('box1_W');
+  const geom = new THREE.ExtrudeGeometry(new THREE.Shape().moveTo(-w/2,0).absarc(0,0,w/2,0,Math.PI,false).lineTo(w/2,0), {depth:carWidth*0.4, bevelEnabled:false});
+  geom.translate(0, 0, -carWidth*0.2); geom.rotateX(Math.PI/2); geom.rotateZ(Math.PI/2);
+  const xOff = (side==='left' ? -carWidth/2 : carWidth/2);
   const mesh = addFeatureMesh(geom, 0x777777, xOff, y);
   roadFeatures.push({id: nextFeatureId++, type:'half-bump', params:{h,w,y,side}, mesh});
   refreshFeatures();
 }
 
-function refreshFeatures() {
-  const div = document.getElementById('featureList');
-  div.innerHTML = roadFeatures.map((f,i) => 
-    `<div>
-       <span>${f.type} @ ${f.params.y.toFixed(0)}</span>
-       <button onclick="window.delFeat(${i})">x</button>
-     </div>`
-  ).join('');
+function addRoughPatch(h, w, y) {
+  const carWidth = getVal('box1_W');
+  const geom = new THREE.PlaneGeometry(carWidth * 3, w, 20, Math.max(5, Math.floor(w/10)));
+  const pos = geom.attributes.position;
+  for(let i=0; i<pos.count; i++) pos.setZ(i, pos.getZ(i) + (Math.random()-0.5)*2.0);
+  geom.computeVertexNormals();
+  const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 1.0, flatShading: true }));
+  mesh.position.set(0, y, 0.5);
+  groundGroup.add(mesh);
+  roadFeatures.push({id: nextFeatureId++, type:'rough', params:{h,w,y}, mesh});
+  refreshFeatures();
 }
 
-window.delFeat = (i) => {
-  groundGroup.remove(roadFeatures[i].mesh);
-  roadFeatures.splice(i,1);
-  refreshFeatures();
-};
+function refreshFeatures() {
+  const div = document.getElementById('featureList');
+  div.innerHTML = roadFeatures.map((f,i) => {
+    let desc = f.type;
+    if(f.type==='half-bump') desc = f.params.side==='left' ? '½L' : '½R';
+    if(f.type==='rough') desc = 'Rough';
+    return `<div><span><b>${desc}</b> @${f.params.y.toFixed(0)}</span><button onclick="window.delFeat(${i})">x</button></div>`;
+  }).join('');
+}
+window.delFeat = (i) => { groundGroup.remove(roadFeatures[i].mesh); roadFeatures.splice(i,1); refreshFeatures(); };
 
 function getRoadZ(x, y) {
   let z = 0;
   for(let f of roadFeatures) {
+    if(f.type === 'rough') {
+      if (y >= (f.params.y - f.params.w/2) && y <= (f.params.y + f.params.w/2)) {
+        z = f.params.h * (0.5*Math.sin(0.1*y)*Math.sin(0.1*x) + 0.3*Math.sin(0.3*y+1.2) + 0.2*Math.sin(0.5*(x+y)));
+      }
+      continue;
+    }
     const dy = y - f.params.y;
     const r = f.params.w/2;
     if(Math.abs(dy) < r) {
-      if(f.type === 'half-bump') {
-        if(f.params.side === 'left' && x > 0) continue;
-        if(f.params.side === 'right' && x < 0) continue;
-      }
+      if(f.type === 'half-bump' && ((f.params.side === 'left' && x > 0) || (f.params.side === 'right' && x < 0))) continue;
       z = Math.max(z, f.params.h * Math.sqrt(1 - (dy*dy)/(r*r)));
     }
   }
   return z;
 }
 
-// --- PHYSICS ENGINE (RK4) ---
-function getDerivatives(t, s) {
-  if(!massProps || !wheelOffsets) return Array(14).fill(0);
-
-  const z=s[0], phi=s[1], theta=s[2];
-  const dz=s[3], dphi=s[4], dtheta=s[5];
+// --- SUB-STEPPED BOX PHYSICS (FIXED GRAVITY & GROUND) ---
+function stepBox3(dt, vehAccel) {
+  const substeps = 10;
+  const subDt = dt / substeps;
   
+  const g = getVal('veh_g');
+  const m3 = getVal('box3_Wt') / g;
+  const H3 = getVal('box3_H');
+  const H1 = getVal('box1_H');
+  const W1 = getVal('box1_W');
+  const L1 = getVal('box1_L');
+  const R_wheel = getVal('wheel_D') / 2;
+  
+  const bedLocalZ = (H1/2 + R_wheel) - massProps.CG.z + H1/2; 
+  
+  const targetSquish = 0.5; 
+  const k = (m3 * g) / targetSquish;
+  
+  const zeta_comp = 0.5;
+  const zeta_reb = 0.01;
+  const c_comp = 2 * zeta_comp * Math.sqrt(k * m3);
+  const c_reb = 2 * zeta_reb * Math.sqrt(k * m3);
+  
+  // Gravity Force in Local Frame (Rotated)
+  const sinP = Math.sin(state.phi), cosP = Math.cos(state.phi);
+  const sinT = Math.sin(state.theta), cosT = Math.cos(state.theta);
+  
+  // G_local_x =  g * sin(theta)
+  // G_local_y = -g * sin(phi) * cos(theta)
+  // G_local_z = -g * cos(phi) * cos(theta)
+  const Fg_x = m3 * g * sinT;
+  const Fg_y = m3 * g * (-sinP * cosT);
+  const Fg_z = m3 * g * (-cosP * cosT);
+
+  for(let i=0; i<substeps; i++) {
+    // 1. Bed Boundary Check
+    const onBedX = Math.abs(box3State.x) < W1/2;
+    const b1cy = (-L1/2) - massProps.CG.y;
+    const minY = b1cy - L1/2;
+    const maxY = b1cy + L1/2;
+    const onBedY = box3State.y > minY && box3State.y < maxY;
+    
+    const isOverBed = onBedX && onBedY;
+    
+    const boxBottom = box3State.z - H3/2;
+    const pen = bedLocalZ - boxBottom;
+    
+    let Fz = 0, Fx = 0, Fy = 0;
+    
+    // BED CONTACT
+    if(pen > 0 && isOverBed) {
+      const F_spring = k * pen;
+      const c = (box3State.dz < 0) ? c_comp : c_reb;
+      const F_damp = c * (-box3State.dz);
+      Fz = Math.max(0, F_spring + F_damp);
+      
+      const mu = getVal('box3_Fric');
+      const maxFriction = mu * Fz;
+      const vx = box3State.dx; 
+      const vy = box3State.dy;
+      const v_rel = Math.sqrt(vx*vx + vy*vy);
+      
+      if(v_rel > 0.1) {
+        Fx = -maxFriction * (vx / v_rel);
+        Fy = -maxFriction * (vy / v_rel);
+      } else {
+        Fx = -vx * 500;
+        Fy = -vy * 500;
+      }
+    }
+    
+    // GROUND CHECK (Precise World Coords)
+    const lz = box3State.z - H3/2;
+    // Z_w_rel = -sinT*x + sinP*cosT*y + cosP*cosT*lz
+    const rotZ = -sinT*box3State.x + sinP*cosT*box3State.y + cosP*cosT*lz;
+    const worldBottomZ = state.z + rotZ;
+    const groundHeight = 0;
+    
+    if (worldBottomZ < groundHeight) {
+       // Ground Contact
+       const penGround = groundHeight - worldBottomZ;
+       const k_g = k; 
+       const F_g_mag = k_g * penGround; 
+       
+       // Add components to local forces (Up_local vector)
+       Fx += F_g_mag * (-sinT);
+       Fy += F_g_mag * (sinP * cosT);
+       Fz += F_g_mag * (cosP * cosT);
+       
+       // Ground Friction (Damping absolute motion)
+       Fx -= box3State.dx * 10.0;
+       Fy -= box3State.dy * 10.0;
+       
+       const v_car = getVal('veh_v');
+       const dragCoeff = 20.0;
+       Fy -= (box3State.dy + v_car) * dragCoeff; 
+    }
+
+    // Inertial Forces (Fictitious forces from vehicle accel)
+    const F_inertial_z = -m3 * vehAccel.ddz; 
+    
+    // Sum Forces
+    const F_total_x = Fx + Fg_x;
+    const F_total_y = Fy + Fg_y;
+    const F_total_z = Fz + Fg_z + F_inertial_z;
+    
+    const ax = F_total_x / m3;
+    const ay = F_total_y / m3;
+    const az = F_total_z / m3;
+    
+    box3State.dx += ax * subDt;
+    box3State.dy += ay * subDt;
+    box3State.dz += az * subDt;
+    
+    box3State.x += box3State.dx * subDt;
+    box3State.y += box3State.dy * subDt;
+    box3State.z += box3State.dz * subDt;
+    
+    box3State.az = az + vehAccel.ddz;
+  }
+}
+
+function getDerivatives(t, s_arr) {
+  if(!massProps || !wheelOffsets) return Array(14).fill(0);
+  const z=s_arr[0], phi=s_arr[1], theta=s_arr[2];
+  const dz=s_arr[3], dphi=s_arr[4], dtheta=s_arr[5];
   const v = getVal('veh_v');
   const g = getVal('veh_g');
   const wm = getVal('wheel_Wt') / g;
-  
   let FzBody=0, Tx=0, Ty=0;
   const ddzw = [0,0,0,0];
-
   const names = ['FL','FR','RL','RR'];
   const R = getVal('wheel_D')/2;
-
+  
   names.forEach((n, i) => {
     const wOff = wheelOffsets[i];
-    const zw = s[6+i];
-    const dzw = s[10+i];
-
-    // Suspension
-    // Body height at wheel corner
+    const zw = s_arr[6+i];
     const zb = z - phi*wOff.x + theta*wOff.y;
     const dzb = dz - dphi*wOff.x + dtheta*wOff.y;
-    
-    const isFront = n.startsWith('F');
-    const k_s = isFront ? getVal('k_sf') : getVal('k_sr');
-    const c_s = isFront ? getVal('c_sf') : getVal('c_sr');
-    
-    // Model: Force = k * (FreeLen - (zb - zw)). 
+    const k_s = n.startsWith('F') ? getVal('k_sf') : getVal('k_sr');
+    const c_s = n.startsWith('F') ? getVal('c_sf') : getVal('c_sr');
     const freeLen = 25; 
     const comp = freeLen - (zb - zw);
-    const dcomp = -(dzb - dzw);
+    const dcomp = -(dzb - s_arr[10+i]);
     const F_susp = Math.max(0, k_s * comp + c_s * dcomp);
-    
-    // Sum Body Forces
     FzBody += F_susp;
-    Tx += F_susp * wOff.y; // Pitch
-    Ty -= F_susp * wOff.x; // Roll
-
-    // Tire
+    Tx += F_susp * wOff.y;
+    Ty -= F_susp * wOff.x;
+    
     const roadY = wOff.y + (v * t);
-    const roadX = wOff.x; 
-    // Absolute X for road lookup (Wheel Offset from CG + CG X position)
-    // Assuming we drive straight down Y, CG X is constant at massProps.CG.x relative to road center 0?
-    // Actually, road is centered at x=0. 
-    // wOff.x is wheel relative to CG. 
-    // If CG is at x=0 (symmetric), absX = wOff.x.
-    // If CG is offset, we need to account for that.
     const absX = wOff.x + massProps.CG.x;
-    
     const roadZ = getRoadZ(absX, roadY);
-    
     const pen = roadZ - (zw - R);
-    const k_t = isFront ? getVal('k_tf') : getVal('k_tr');
+    const k_t = n.startsWith('F') ? getVal('k_tf') : getVal('k_tr');
     const F_tire = (pen > 0) ? k_t * pen : 0;
-
-    // Wheel Accel
     ddzw[i] = (F_tire - F_susp - wm*g) / wm;
   });
-
+  
   const ddz = (FzBody - massProps.M*g) / massProps.M;
   const ddphi = Ty / massProps.Iyy;
   const ddtheta = Tx / massProps.Ixx;
   
-  return [
-    dz, dphi, dtheta,
-    ddz, ddphi, ddtheta,
-    s[10], s[11], s[12], s[13],
-    ddzw[0], ddzw[1], ddzw[2], ddzw[3]
-  ];
+  return [ dz, dphi, dtheta, ddz, ddphi, ddtheta, s_arr[10], s_arr[11], s_arr[12], s_arr[13], ddzw[0], ddzw[1], ddzw[2], ddzw[3] ];
 }
 
 function stepRK4(dt) {
-  const s = [
-    state.z, state.phi, state.theta,
-    state.dz, state.dphi, state.dtheta,
-    state.zw.FL, state.zw.FR, state.zw.RL, state.zw.RR,
-    state.dzw.FL, state.dzw.FR, state.dzw.RL, state.dzw.RR
-  ];
+  const s = packState(state);
   const t = simTime;
-  
   const k1 = getDerivatives(t, s);
   const s2 = s.map((v,i) => v + k1[i]*dt*0.5);
   const k2 = getDerivatives(t+dt*0.5, s2);
@@ -435,7 +657,6 @@ function stepRK4(dt) {
   const k3 = getDerivatives(t+dt*0.5, s3);
   const s4 = s.map((v,i) => v + k3[i]*dt);
   const k4 = getDerivatives(t+dt, s4);
-  
   const fin = s.map((v,i) => v + (dt/6)*(k1[i] + 2*k2[i] + 2*k3[i] + k4[i]));
   
   state.z=fin[0]; state.phi=fin[1]; state.theta=fin[2];
@@ -443,39 +664,41 @@ function stepRK4(dt) {
   state.zw.FL=fin[6]; state.zw.FR=fin[7]; state.zw.RL=fin[8]; state.zw.RR=fin[9];
   state.dzw.FL=fin[10]; state.dzw.FR=fin[11]; state.dzw.RL=fin[12]; state.dzw.RR=fin[13];
   
+  const vehAccel = { ddz: k1[3], ddphi: k1[4], ddtheta: k1[5] };
+  stepBox3(dt, vehAccel);
+  
+  state.ddz = vehAccel.ddz; 
+  state.ddphi = vehAccel.ddphi;
+  state.ddtheta = vehAccel.ddtheta;
+  
   simTime += dt;
 }
 
-// --- ANIMATION ---
 function animate() {
   requestAnimationFrame(animate);
-  if(massProps) stepRK4(dt);
+  if(isRunning && massProps) {
+    const timeScale = getVal('time_scale');
+    stepRK4(dt * timeScale);
+    updateChartLogic(simTime);
+  }
   
-  // Sync Visuals
   vehicleGroup.position.set(0, 0, state.z);
   vehicleGroup.rotation.set(state.theta, state.phi, 0);
-
-  // Move Ground
   const dist = getVal('veh_v') * simTime;
   groundGroup.position.y = -dist;
-
-  // Move Wheels (Locally)
+  
   if(wheelOffsets) {
     const names = ['FL','FR','RL','RR'];
-    const R = getVal('wheel_D')/2;
     names.forEach(n => {
       const mesh = vehicleGroup.getObjectByName("W_"+n);
-      if(mesh) {
-        // mesh is child of vehicleGroup (which is at state.z)
-        // mesh.position.z needs to be (zw - state.z) + offsets
-        // BUT mesh was created at (R - CG.z). 
-        // We want absolute Z of center to be zw.
-        // So local z = zw - state.z.
-        mesh.position.z = state.zw[n] - state.z;
-      }
+      if(mesh) mesh.position.z = state.zw[n] - state.z;
     });
   }
-
+  
+  if(looseBox3Mesh) {
+    looseBox3Mesh.position.set(box3State.x, box3State.y, box3State.z);
+  }
+  
   renderer.render(scene, camera);
 }
 </script>
