@@ -99,12 +99,24 @@
         <label>Time Scale <span class="units">x</span><input id="time_scale" type="number" value="1.0" step="0.1" min="0.1" max="10"></label>
       </div>
 
-      <div class="grid2" style="margin-top:10px;">
-        <button id="solveBtn">► Solve</button>
-        <button id="stopBtn">■ Stop</button>
-      </div>
-      <button id="updateBtn">Reset / Center Vehicle</button>
-      
+<div class="grid2" style="margin-top:10px;">
+  <button id="solveBtn">► Solve</button>
+  <button id="stopBtn">■ Stop</button>
+</div>
+<button id="updateBtn">Reset / Center Vehicle</button>
+
+<!-- ADD THESE THREE BUTTONS HERE -->
+<div style="margin-top:10px;">
+  <button id="exportJsonBtn" style="background: #fff3cd; border-color: #ffc107; color: #856404;">💾 Export JSON</button>
+  <button id="importJsonBtn" style="background: #d1ecf1; border-color: #bee5eb; color: #0c5460;">📂 Import JSON</button>
+  <button id="exportCsvBtn" style="background: #d4edda; border-color: #c3e6cb; color: #155724;">📊 Export CSV</button>
+</div>
+<!-- END OF NEW BUTTONS -->      
+
+
+
+
+
       <h3>Analysis Point</h3>
       <div class="grid2">
         <label>User X <span class="units">in</span><input id="user_X" type="number" value="0"></label>
@@ -122,7 +134,7 @@
           </select>
         </label>
         <label>Height/Roughness <span class="units">in</span><input id="feat_H" type="number" value="3"></label>
-        <label>Length Y <span class="units">in</span><input id="feat_W" type="number" value="200"></label>
+        <label>Length Y <span class="units">in</span><input id="feat_W" type="number" value="12"></label>
         <label>Location Y <span class="units">in</span><input id="feat_Y" type="number" value="100"></label>
       </div>
       <button id="addFeatureBtn">+ Add Feature</button>
@@ -703,9 +715,219 @@ function animate() {
   
   renderer.render(scene, camera);
 }
+
+// ==================== EXPORT/IMPORT FUNCTIONS ====================
+
+// Helper function to get formatted timestamp
+function getTimestamp() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+}
+
+// 1. EXPORT JSON BUTTON
+document.getElementById('exportJsonBtn').onclick = () => {
+  const data = {
+    timestamp: new Date().toISOString(),
+    box1: {
+      length: getVal('box1_L'),
+      width: getVal('box1_W'),
+      height: getVal('box1_H'),
+      weight: getVal('box1_Wt')
+    },
+    box2: {
+      length: getVal('box2_L'),
+      width: getVal('box2_W'),
+      height: getVal('box2_H'),
+      weight: getVal('box2_Wt'),
+      frontOffset: getVal('box2_dY')
+    },
+    box3: {
+      length: getVal('box3_L'),
+      width: getVal('box3_W'),
+      height: getVal('box3_H'),
+      weight: getVal('box3_Wt'),
+      initialX: getVal('box3_X0'),
+      initialY: getVal('box3_Y0'),
+      frictionCoeff: getVal('box3_Fric')
+    },
+    wheels: {
+      diameter: getVal('wheel_D'),
+      weight: getVal('wheel_Wt'),
+      frontY: getVal('wheel_Yf'),
+      rearSpacing: getVal('wheel_dYr')
+    },
+    suspension: {
+      frontK: getVal('k_sf'),
+      frontC: getVal('c_sf'),
+      rearK: getVal('k_sr'),
+      rearC: getVal('c_sr')
+    },
+    tires: {
+      frontK: getVal('k_tf'),
+      rearK: getVal('k_tr')
+    },
+    simulation: {
+      speed: getVal('veh_v'),
+      gravity: getVal('veh_g'),
+      timeScale: getVal('time_scale')
+    },
+    analysisPoint: {
+      userX: getVal('user_X'),
+      userY: getVal('user_Y')
+    },
+    roadFeatures: roadFeatures.map(f => ({
+      type: f.type,
+      params: f.params
+    }))
+  };
+  
+  const jsonStr = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `vehicle_dynamics_${getTimestamp()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+// 2. IMPORT JSON BUTTON
+document.getElementById('importJsonBtn').onclick = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        
+        // Box 1
+        setVal('box1_L', data.box1.length);
+        setVal('box1_W', data.box1.width);
+        setVal('box1_H', data.box1.height);
+        setVal('box1_Wt', data.box1.weight);
+        
+        // Box 2
+        setVal('box2_L', data.box2.length);
+        setVal('box2_W', data.box2.width);
+        setVal('box2_H', data.box2.height);
+        setVal('box2_Wt', data.box2.weight);
+        setVal('box2_dY', data.box2.frontOffset);
+        
+        // Box 3
+        setVal('box3_L', data.box3.length);
+        setVal('box3_W', data.box3.width);
+        setVal('box3_H', data.box3.height);
+        setVal('box3_Wt', data.box3.weight);
+        setVal('box3_X0', data.box3.initialX);
+        setVal('box3_Y0', data.box3.initialY);
+        setVal('box3_Fric', data.box3.frictionCoeff);
+        
+        // Wheels
+        setVal('wheel_D', data.wheels.diameter);
+        setVal('wheel_Wt', data.wheels.weight);
+        setVal('wheel_Yf', data.wheels.frontY);
+        setVal('wheel_dYr', data.wheels.rearSpacing);
+        
+        // Suspension
+        setVal('k_sf', data.suspension.frontK);
+        setVal('c_sf', data.suspension.frontC);
+        setVal('k_sr', data.suspension.rearK);
+        setVal('c_sr', data.suspension.rearC);
+        
+        // Tires
+        setVal('k_tf', data.tires.frontK);
+        setVal('k_tr', data.tires.rearK);
+        
+        // Simulation
+        setVal('veh_v', data.simulation.speed);
+        setVal('veh_g', data.simulation.gravity);
+        setVal('time_scale', data.simulation.timeScale);
+        
+        // Analysis Point
+        setVal('user_X', data.analysisPoint.userX);
+        setVal('user_Y', data.analysisPoint.userY);
+        
+        // Clear existing road features
+        roadFeatures.forEach(f => groundGroup.remove(f.mesh));
+        roadFeatures = [];
+        nextFeatureId = 1;
+        
+        // Recreate road features
+        if (data.roadFeatures) {
+          data.roadFeatures.forEach(f => {
+            const p = f.params;
+            if (f.type === 'bump') addSpeedBump(p.h, p.w, p.y);
+            else if (f.type === 'half-bump') addHalfSpeedBump(p.h, p.w, p.y, p.side);
+            else if (f.type === 'rough') addRoughPatch(p.h, p.w, p.y);
+          });
+        }
+        
+        // Rebuild vehicle with new parameters
+        buildVehicle(false);
+        
+        alert('Configuration loaded successfully!');
+      } catch (err) {
+        alert('Error loading JSON file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+};
+
+// 3. EXPORT CSV BUTTON
+document.getElementById('exportCsvBtn').onclick = () => {
+  if (!chartInstance || chartInstance.data.labels.length === 0) {
+    alert('No data to export. Run a simulation first.');
+    return;
+  }
+  
+  const labels = chartInstance.data.labels;
+  const datasets = chartInstance.data.datasets;
+  
+  // Create CSV header
+  let csv = 'Time (s),CG (G),FL (G),FR (G),RL (G),RR (G),User (G),Box3 (G)\n';
+  
+  // Add data rows
+  for (let i = 0; i < labels.length; i++) {
+    const row = [
+      labels[i],
+      datasets[0].data[i].toFixed(4),
+      datasets[1].data[i].toFixed(4),
+      datasets[2].data[i].toFixed(4),
+      datasets[3].data[i].toFixed(4),
+      datasets[4].data[i].toFixed(4),
+      datasets[5].data[i].toFixed(4),
+      datasets[6].data[i].toFixed(4)
+    ].join(',');
+    csv += row + '\n';
+  }
+  
+  // Download CSV
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `vehicle_acceleration_${getTimestamp()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 </script>
 </body>
 </html>
+
 
 
 
